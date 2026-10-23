@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Verify & Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends wireguard-tools bats shellcheck
+
+      - name: Verify tag matches tunnelsats.json latest_version and version.json
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          JSON_VER=$(jq -r '.latest_version' mynode_app/tunnelsats/tunnelsats.json)
+          PKG_VER="v$(jq -r '.version' version.json)"
+          if [ "$TAG" != "$JSON_VER" ]; then
+            echo "::error::Tag ($TAG) does not match mynode_app/tunnelsats/tunnelsats.json latest_version ($JSON_VER)"
+            exit 1
+          fi
+          if [ "$TAG" != "$PKG_VER" ]; then
+            echo "::error::Tag ($TAG) does not match version.json ($PKG_VER)"
+            exit 1
+          fi
+
+      - name: Run MyNode SDK linter and test suites
+        run: |
+          python3 scripts/check_mynode_app.py
+          python3 -m unittest discover -s tests -p "test_*.py" -v
+          bats tests/*.bats
+
+      - name: Compute release source tarball SHA-256 and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
+          curl -fsSL "$TARBALL_URL" -o "/tmp/ts-mynode-${TAG}.tar.gz"
+          SHA256=$(sha256sum "/tmp/ts-mynode-${TAG}.tar.gz" | awk '{print $1}')
+          cat <<EOF > /tmp/release-notes.md
+          ## TunnelSats for myNode ${TAG}
+
+          ### MyNode App SDK v2 Source Pin (\`tunnelsats.json\`)
+
+          Update \`download_source_sha256\` in \`rootfs/standard/usr/share/mynode_apps/tunnelsats/tunnelsats.json\`:
+
+          \`\`\`json
+          "latest_version": "${TAG}",
+          "download_source_sha256": "${TAG} ${SHA256}"
+          \`\`\`
+
+          - **Source Archive**: \`${TARBALL_URL}\`
+          - **SHA-256**: \`${SHA256}\`
+          EOF
+          gh release create "$TAG" --title "TunnelSats for myNode ${TAG}" --notes-file /tmp/release-notes.md

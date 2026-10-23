@@ -1,0 +1,1671 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0f1115" />
+    <title>TunnelSats - MyNode Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link
+      rel="preload"
+      href="fonts/inter-latin-wght-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="fonts/jetbrains-mono-latin-wght-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="background-glow"></div>
+
+    <main class="dashboard-wrapper">
+      <h1 class="visually-hidden">TunnelSats dashboard for MyNode</h1>
+      <!-- -- Top Command Header & Segmented Navigation Bar -- -->
+      <header class="command-header">
+        <div class="brand">
+          <img
+            src="ts_logo_rectangle.svg"
+            alt="TunnelSats"
+            class="brand-logo"
+          />
+          <span class="brand-tagline">Clearnet Lightning VPN</span>
+        </div>
+
+        <nav class="command-nav" aria-label="Dashboard sections">
+          <button
+            type="button"
+            id="tab-btn-overview"
+            class="nav-pill is-active"
+            data-tab-target="overview"
+            aria-pressed="true"
+            aria-current="page"
+          >
+            <svg
+              class="nav-pill-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="7" height="9" rx="1.5" />
+              <rect x="14" y="3" width="7" height="5" rx="1.5" />
+              <rect x="14" y="12" width="7" height="9" rx="1.5" />
+              <rect x="3" y="16" width="7" height="5" rx="1.5" />
+            </svg>
+            <span>Overview</span>
+          </button>
+          <button
+            type="button"
+            id="tab-btn-actions"
+            class="nav-pill"
+            data-tab-target="actions"
+            aria-pressed="false"
+          >
+            <svg
+              class="nav-pill-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span class="nav-label"
+              >Actions<span class="nav-label-extra"> &amp; Plans</span></span
+            >
+          </button>
+          <button
+            type="button"
+            id="tab-btn-verify"
+            class="nav-pill"
+            data-tab-target="verify"
+            aria-pressed="false"
+          >
+            <svg
+              class="nav-pill-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span class="nav-label"
+              >Verify<span class="nav-label-extra"> &amp; CLI</span></span
+            >
+          </button>
+        </nav>
+
+        <div class="header-actions">
+          <div id="status-badge" class="status-badge" role="status">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            <span id="status-text">Loading</span>
+          </div>
+          <button
+            type="button"
+            class="header-btn header-btn-faq"
+            data-open-dialog="faq-modal"
+            title="Frequently asked questions"
+          >
+            <svg
+              class="header-btn-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span class="header-btn-faq-label">FAQ</span>
+          </button>
+          <button
+            type="button"
+            id="btn-refresh"
+            class="header-btn header-btn-icon-only header-btn-refresh"
+            title="Refresh dashboard state"
+            aria-label="Refresh dashboard state"
+          >
+            <svg
+              class="header-btn-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- -- Global Priority Alerts, Stepper & Active Invoice Panel -- -->
+      <div id="load-error" class="error-banner" role="alert" hidden></div>
+
+      <section
+        id="notices"
+        class="notices-panel"
+        aria-label="Action needed"
+        hidden
+      >
+        <ul id="notice-list" class="notice-list"></ul>
+      </section>
+
+      <section
+        id="flow"
+        class="flow-panel"
+        aria-label="Current progress"
+        hidden
+      >
+        <div id="flow-list" class="flow-list"></div>
+      </section>
+
+      <!-- Payable BOLT11 Invoice Panel (D1: Dual-path payment via MyNode Pay Invoice task OR QR/copy) -->
+      <section
+        id="invoice-panel"
+        class="card invoice-card"
+        aria-labelledby="invoice-title"
+        hidden
+      >
+        <div class="card-header-row">
+          <div class="card-title-with-icon">
+            <img src="Bitcoin.svg" alt="" class="title-icon" />
+            <h2 id="invoice-title">Pay Lightning Invoice</h2>
+          </div>
+          <span id="invoice-expiry" class="badge-pill">Expires soon</span>
+        </div>
+        <p id="invoice-framing" class="invoice-framing">
+          A <strong>Pay Invoice</strong> task has been raised on your Lightning
+          node. Accept it in MyNode, or scan/copy the same invoice below.
+        </p>
+        <div
+          id="invoice-switcher"
+          class="invoice-switcher"
+          role="group"
+          aria-label="Payable invoices"
+          hidden
+        ></div>
+        <div class="invoice-body">
+          <div
+            id="invoice-qr"
+            class="invoice-qr"
+            role="img"
+            aria-label="Lightning invoice QR code"
+          ></div>
+          <div class="invoice-details">
+            <div class="invoice-amount-row">
+              <span class="prop-label">Amount</span>
+              <span id="invoice-amount" class="invoice-amount"> - </span>
+            </div>
+            <div class="prop-item">
+              <span class="prop-label">BOLT11 Lightning Invoice</span>
+              <div class="prop-value-group">
+                <span id="val-invoice" class="prop-value truncated" title=""
+                  > - </span
+                >
+                <button
+                  type="button"
+                  class="btn-copy"
+                  data-copy="val-invoice"
+                  title="Copy BOLT11 invoice"
+                >
+                  Copy Invoice
+                </button>
+              </div>
+            </div>
+            <p class="invoice-status-note">
+              TunnelSats checks for payment automatically and updates this page
+              once settled.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div
+        id="intent-feedback"
+        class="intent-feedback"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
+
+      <p id="view-loading" class="view-loading">
+        Loading the TunnelSats status…
+      </p>
+
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 1A: NEW CUSTOMER SETUP VIEW (Emphasizing Server Region + Buy) -->
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <section
+        id="view-setup"
+        class="setup-view"
+        aria-labelledby="setup-heading"
+        hidden
+      >
+        <div class="setup-hero">
+          <img src="ts_logo_square_tiny.svg" alt="" class="hero-logo" />
+          <div class="hero-copy">
+            <h2 id="setup-heading">Get started with TunnelSats</h2>
+            <p class="hero-desc">
+              Route clearnet Lightning peer connections for
+              <strong>LND, Core Lightning or Eclair</strong> through a dedicated
+              WireGuard port, so peers see a TunnelSats address instead of your
+              home IP.
+            </p>
+          </div>
+        </div>
+
+        <ul class="brand-trust-strip" aria-label="What you get">
+          <li class="brand-trust-pill">
+            <img src="icons/no_kyc.png" alt="" class="brand-tile-icon-sm" />
+            <span>No KYC, pay with Lightning</span>
+          </li>
+          <li class="brand-trust-pill">
+            <img src="icons/no_logs.png" alt="" class="brand-tile-icon-sm" />
+            <span>No traffic logs</span>
+          </li>
+          <li class="brand-trust-pill">
+            <img src="icons/keys.png" alt="" class="brand-tile-icon-sm" />
+            <span>Keys generated on this server</span>
+          </li>
+          <li class="brand-trust-pill">
+            <img src="icons/shield.png" alt="" class="brand-tile-icon-sm" />
+            <span>Dedicated forwarded port</span>
+          </li>
+        </ul>
+
+        <div class="card setup-composer">
+          <!-- Step 1: Server Region Pill Selector -->
+          <div class="setup-block">
+            <div class="step-header-row">
+              <span class="step-badge">Step 1</span>
+              <h3 class="step-label">Select server region</h3>
+              <p id="server-status-note" class="note step-inline-note" hidden>
+                Live capacity:
+                <a
+                  href="https://tunnelsats.com/status"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >tunnelsats.com/status</a
+                >
+              </p>
+            </div>
+            <div class="server-picker">
+              <ul
+                id="server-cards"
+                class="server-cards"
+                aria-label="TunnelSats server regions"
+                hidden
+              ></ul>
+              <p
+                id="server-cards-note"
+                class="note"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></p>
+              <label class="intent-field fallback-select-wrap">
+                <span class="intent-field-label">Server Region</span>
+                <select id="buy-server-select" class="intent-select">
+                  <option value="eu-de" selected>🇪🇺 Europe  -  Germany</option>
+                  <option value="eu-ch">🇨🇭 Europe  -  Switzerland</option>
+                  <option value="us-east">🇺🇸 Americas  -  US East</option>
+                  <option value="us-west">🇺🇸 Americas  -  US West</option>
+                  <option value="ap-sg">🇸🇬 Asia-Pacific  -  Singapore</option>
+                  <option value="ap-jp">🇯🇵 Asia-Pacific  -  Tokyo</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <!-- Step 2: Plan Duration Pill Selector -->
+          <div class="setup-block">
+            <div class="step-header-row">
+              <span class="step-badge">Step 2</span>
+              <h3 class="step-label">Choose a plan</h3>
+              <span class="price-note step-inline-note"
+                >Quoted in sats at checkout · 100 GB/month included</span
+              >
+            </div>
+            <ul
+              id="plan-list"
+              class="plan-cards-grid"
+              aria-label="Subscription duration plans"
+            ></ul>
+            <label class="intent-field sr-only-select">
+              <span class="intent-field-label">Duration</span>
+              <select id="buy-duration-select" class="intent-select">
+                <option value="1m">1 Month ($3.00)</option>
+                <option value="3m" selected>3 Months ($8.55  -  Save 5%)</option>
+                <option value="6m">6 Months ($16.20  -  Save 10%)</option>
+                <option value="12m">12 Months ($28.80  -  Save 20%)</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- Step 3: Emphasized Primary Buy Action -->
+          <div class="setup-cta-row">
+            <button
+              type="button"
+              id="btn-intent-buy"
+              class="btn-intent btn-intent-hero"
+              data-submit-intent="buy"
+            >
+              <svg
+                class="btn-icon-svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span id="buy-cta-label">Buy subscription</span>
+            </button>
+            <p class="cta-note">
+              Creates a Lightning invoice and a
+              <strong>Pay Invoice</strong> task on your node.
+            </p>
+          </div>
+        </div>
+
+        <ol class="onboarding-strip" aria-label="How provisioning works">
+          <li class="onboarding-step">
+            <img src="icons/lightning.png" alt="" class="brand-tile-icon" />
+            <div class="onboarding-copy">
+              <strong>1. Request an invoice</strong>
+              <span>
+                Use the plan picker above or run
+                <span class="path"
+                  >Services → TunnelSats → Actions → Buy Subscription</span
+                >. Bought on tunnelsats.com? Run
+                <strong>Import Subscription</strong>.
+              </span>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <img src="icons/connected.png" alt="" class="brand-tile-icon" />
+            <div class="onboarding-copy">
+              <strong>2. Pay with Lightning</strong>
+              <span>
+                Accept the <strong>Pay Invoice</strong> task on your node or
+                scan the QR code shown here. Auto-renew is optional via
+                <span class="path"
+                  >Services → TunnelSats → Actions → Connect Wallet</span
+                >.
+              </span>
+            </div>
+          </li>
+          <li class="onboarding-step">
+            <img src="icons/stack.png" alt="" class="brand-tile-icon" />
+            <div class="onboarding-copy">
+              <strong>3. Accept the routing task</strong>
+              <span>
+                Accept <strong>Clearnet over VPN</strong> on your Lightning
+                node; WireGuard then runs inside the node container.
+              </span>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 1B: EXISTING CUSTOMER COMMAND DECK (Top Awareness + Renew)    -->
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <section id="view-overview" class="telemetry-wrapper" hidden>
+        <!-- a) Connection: the configured route, never a live tunnel test -->
+        <section
+          class="card connection-card"
+          aria-labelledby="connection-heading"
+        >
+          <div class="card-header-row">
+            <div class="card-title-with-icon">
+              <img src="icons/connected.png" alt="" class="brand-tile-icon" />
+              <h2 id="connection-heading">Connection</h2>
+            </div>
+            <button type="button" class="text-btn" data-tab-target="verify">
+              Verify on the node
+              <svg
+                class="text-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </button>
+          </div>
+
+          <ol class="route" aria-label="Configured route">
+            <li class="route-stop">
+              <span class="route-marker" aria-hidden="true">
+                <svg
+                  class="route-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </span>
+              <span class="route-label">Lightning node</span>
+              <span id="val-target-node" class="route-value">LND</span>
+            </li>
+            <li class="route-stop">
+              <span class="route-marker" aria-hidden="true">
+                <svg
+                  class="route-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </span>
+              <span class="route-label">Tunnel address</span>
+              <span id="val-vpn-ip" class="route-value">Not assigned</span>
+            </li>
+            <li class="route-stop">
+              <span class="route-marker" aria-hidden="true">
+                <svg
+                  class="route-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path
+                    d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+                  />
+                </svg>
+              </span>
+              <span class="route-label">Public address</span>
+              <span class="route-value-row">
+                <span id="val-endpoint" class="route-value"
+                  >Not configured</span
+                >
+                <button
+                  type="button"
+                  class="btn-copy"
+                  data-copy="val-endpoint"
+                  title="Copy server:port"
+                >
+                  Copy
+                </button>
+              </span>
+            </li>
+          </ol>
+
+          <dl class="connection-facts">
+            <div class="fact">
+              <dt>Routing task</dt>
+              <dd id="val-handoff">Waiting for configuration</dd>
+            </div>
+            <div class="fact">
+              <dt>Last confirmed</dt>
+              <dd id="val-last-sync">Pending first sync</dd>
+            </div>
+            <div class="fact">
+              <dt>WireGuard public key</dt>
+              <dd class="fact-value-row">
+                <span id="val-pubkey" class="fact-mono truncated" title=""
+                  >Not generated</span
+                >
+                <button
+                  type="button"
+                  class="btn-copy"
+                  data-copy="val-pubkey"
+                  title="Copy WireGuard public key"
+                >
+                  Copy
+                </button>
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <!-- b) Two-column deck: subscription + renew, bandwidth -->
+        <div class="command-deck-grid">
+          <section
+            class="card command-card subscription-command-card"
+            aria-labelledby="subscription-heading"
+          >
+            <div class="card-header-row">
+              <div class="card-title-with-icon">
+                <img src="icons/timing.png" alt="" class="brand-tile-icon" />
+                <h2 id="subscription-heading">Subscription</h2>
+              </div>
+              <span id="timeline-phase" class="badge-pill" data-phase="unknown"
+                >Not confirmed</span
+              >
+            </div>
+
+            <div class="ring-and-timeline">
+              <div class="ring-gauge-wrap">
+                <svg
+                  viewBox="0 0 120 120"
+                  class="ring-gauge-svg"
+                  aria-hidden="true"
+                >
+                  <circle class="ring-track" cx="60" cy="60" r="50" />
+                  <circle
+                    id="subscription-ring-arc"
+                    class="ring-arc is-ok"
+                    cx="60"
+                    cy="60"
+                    r="50"
+                    pathLength="100"
+                    stroke-dasharray="100"
+                    stroke-dashoffset="100"
+                  />
+                </svg>
+                <div class="ring-gauge-center">
+                  <span id="countdown" class="metric-value countdown-timer"
+                    >--d --h</span
+                  >
+                  <span id="countdown-sub" class="ring-gauge-sub"
+                    >remaining</span
+                  >
+                </div>
+              </div>
+
+              <div class="timeline-column">
+                <p class="expiry-line">
+                  <span class="expiry-label">Expires</span>
+                  <strong id="expiry-date" class="expiry-date"> - </strong>
+                </p>
+                <progress
+                  id="subscription-progress"
+                  class="gauge gauge-time sr-only-gauge"
+                  max="100"
+                  value="0"
+                  aria-label="Time left of a one-month term"
+                ></progress>
+                <div id="timeline-chart" class="timeline-chart"></div>
+                <ul id="timeline-legend" class="timeline-legend"></ul>
+              </div>
+            </div>
+
+            <!-- Renew composer: existing customers extend in place -->
+            <div class="renew-composer">
+              <div class="renew-composer-header">
+                <h3 class="subhead">Extend subscription</h3>
+                <span class="auto-renew">
+                  <img src="NWC_icon.svg" alt="" class="auto-renew-icon" />
+                  <span class="auto-renew-label">Auto-renew</span>
+                  <span id="nwc-badge" class="nwc-badge">Off</span>
+                </span>
+              </div>
+
+              <div
+                id="renew-pills"
+                class="duration-pills"
+                role="group"
+                aria-label="Choose renewal duration"
+              ></div>
+
+              <label class="intent-field sr-only-select">
+                <span class="intent-field-label">Extend Duration</span>
+                <select
+                  id="renew-duration-select"
+                  class="intent-select intent-select-sm"
+                >
+                  <option value="1m">+1 Month ($3.00)</option>
+                  <option value="3m" selected>+3 Months ($8.55)</option>
+                  <option value="6m">+6 Months ($16.20)</option>
+                  <option value="12m">+12 Months ($28.80)</option>
+                </select>
+              </label>
+
+              <p id="renew-preview" class="renew-preview" hidden></p>
+
+              <button
+                type="button"
+                id="btn-intent-renew"
+                class="btn-intent btn-intent-hero"
+                data-submit-intent="renew"
+              >
+                <svg
+                  class="btn-icon-svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                <span id="renew-cta-label">Renew subscription</span>
+              </button>
+              <p id="nwc-budget-note" class="nwc-budget-note">
+                Optional: connect a wallet in
+                <strong
+                  >Services → TunnelSats → Actions → Connect Wallet</strong
+                >
+                to renew automatically within 7 days of expiry.
+              </p>
+            </div>
+          </section>
+
+          <section
+            class="card command-card bandwidth-command-card"
+            aria-labelledby="bandwidth-heading"
+          >
+            <div class="card-header-row">
+              <div class="card-title-with-icon">
+                <img src="icons/stack.png" alt="" class="brand-tile-icon" />
+                <h2 id="bandwidth-heading">Monthly bandwidth</h2>
+              </div>
+              <button
+                type="button"
+                class="btn-icon"
+                data-open-dialog="bandwidth-modal"
+                title="About monthly bandwidth"
+                aria-label="About monthly bandwidth"
+              >
+                <svg
+                  class="btn-icon-glyph"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="11" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+              </button>
+            </div>
+
+            <div class="arc-gauge-wrap">
+              <svg
+                viewBox="0 0 160 96"
+                class="arc-gauge-svg"
+                aria-hidden="true"
+              >
+                <path
+                  class="arc-track"
+                  d="M 20 82 A 60 60 0 0 1 140 82"
+                  pathLength="100"
+                />
+                <path
+                  id="bandwidth-arc-fill"
+                  class="arc-fill is-ok"
+                  d="M 20 82 A 60 60 0 0 1 140 82"
+                  pathLength="100"
+                  stroke-dasharray="100"
+                  stroke-dashoffset="100"
+                />
+                <circle
+                  id="bandwidth-pace-marker"
+                  class="arc-pace-marker"
+                  cx="20"
+                  cy="82"
+                  r="5"
+                />
+              </svg>
+              <div class="arc-gauge-center">
+                <div class="metric-value-row">
+                  <span id="bandwidth-used" class="metric-value">0.00</span>
+                  <span id="bandwidth-limit" class="metric-unit">/ 100 GB</span>
+                </div>
+                <span class="arc-gauge-sub">used this month</span>
+              </div>
+            </div>
+
+            <meter
+              id="bandwidth-meter"
+              class="gauge gauge-bandwidth sr-only-gauge"
+              min="0"
+              max="100"
+              low="70"
+              high="90"
+              optimum="20"
+              value="0"
+              aria-label="Bandwidth used this month"
+            ></meter>
+
+            <div class="quota-strip">
+              <p id="pace-text" class="pace-text">
+                Usage is shown once TunnelSats confirms it.
+              </p>
+
+              <dl class="quota-facts">
+                <div class="quota-fact quota-fact-row">
+                  <dt>Paid resets used</dt>
+                  <dd class="reset-pips-group">
+                    <span id="reset-pips" class="reset-pips"></span>
+                    <span id="val-resets" class="reset-count-badge"
+                      >Unknown</span
+                    >
+                  </dd>
+                </div>
+                <div class="quota-fact">
+                  <dt>Paid bandwidth reset</dt>
+                  <dd id="val-reset-eligibility">Waiting for usage data</dd>
+                </div>
+              </dl>
+
+              <button
+                type="button"
+                id="btn-intent-reset"
+                class="btn-intent btn-intent-secondary"
+                data-open-dialog="reset-confirm-modal"
+              >
+                Reset usage to 0 · $1.00
+              </button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 2: ACTIONS & PLANS (Switch Region / Buy New + MyNode Actions) -->
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <section id="manage" class="card" aria-labelledby="manage-heading" hidden>
+        <div class="card-header-row">
+          <div class="card-title-with-icon">
+            <img src="icons/documents.png" alt="" class="brand-tile-icon" />
+            <h2>
+              <span id="manage-heading">Actions &amp; Plans</span>
+            </h2>
+          </div>
+          <span class="badge-pill">Services → TunnelSats → Actions</span>
+        </div>
+        <p class="muted">
+          Buy a subscription in another region, or run configuration and backup
+          actions in MyNode.
+        </p>
+
+        <!-- Secondary Server Switch / New Subscription Composer -->
+        <div class="manage-buy-composer">
+          <div class="step-header-row">
+            <h3 class="subhead">Switch Server Region / Buy New Subscription</h3>
+            <span class="price-note"
+              >Generates a new WireGuard key &amp; port in the selected
+              region</span
+            >
+          </div>
+          <ul
+            id="manage-server-cards"
+            class="server-cards"
+            aria-label="Switch server region"
+            hidden
+          ></ul>
+          <div
+            id="manage-duration-pills"
+            class="duration-pills"
+            role="group"
+            aria-label="Choose new plan duration"
+          ></div>
+          <div class="action-controls">
+            <select
+              id="manage-buy-server-select"
+              class="intent-select intent-select-sm fallback-select-wrap"
+              aria-label="Server region"
+            >
+              <option value="eu-de" selected>🇪🇺 Germany</option>
+              <option value="eu-ch">🇨🇭 Switzerland</option>
+              <option value="us-east">🇺🇸 US East</option>
+              <option value="us-west">🇺🇸 US West</option>
+              <option value="ap-sg">🇸🇬 Singapore</option>
+              <option value="ap-jp">🇯🇵 Tokyo</option>
+            </select>
+            <select
+              id="manage-buy-duration-select"
+              class="intent-select intent-select-sm sr-only-select"
+              aria-label="Subscription duration"
+            >
+              <option value="1m">1m ($3.00)</option>
+              <option value="3m" selected>3m ($8.55)</option>
+              <option value="6m">6m ($16.20)</option>
+              <option value="12m">12m ($28.80)</option>
+            </select>
+            <button
+              type="button"
+              id="btn-manage-buy"
+              class="btn-intent"
+              data-submit-intent="buy-manage"
+            >
+              Buy New Subscription in Selected Region
+            </button>
+          </div>
+        </div>
+
+        <!-- MyNode Dual-Mode & Reconciler Control Card -->
+        <div id="mynode-mode-card" class="manage-buy-composer">
+          <div class="step-header-row">
+            <h3 class="subhead">MyNode Execution Mode &amp; Host Reconciler</h3>
+            <span id="mynode-mode-badge" class="badge-pill">Mode A: Integrated</span>
+          </div>
+          <p id="mynode-mode-desc" class="muted">
+            Mode A (Integrated Mode, default) runs <code>reconcile_mynode.sh</code> automatically from the web UI. Mode B (Secure / Manual CLI Mode) disables privileged execution from the web UI and provides copyable SSH commands.
+          </p>
+          <div class="action-controls">
+            <button
+              type="button"
+              id="btn-mynode-toggle-mode"
+              class="btn-intent btn-intent-secondary"
+              data-mynode-toggle-mode
+            >
+              Switch to Mode B (Secure / Manual CLI)
+            </button>
+            <button
+              type="button"
+              id="btn-mynode-apply"
+              class="btn-intent"
+              data-mynode-reconcile="apply"
+            >
+              Apply Tunnel on MyNode
+            </button>
+            <button
+              type="button"
+              id="btn-mynode-restore"
+              class="btn-intent btn-intent-secondary"
+              data-mynode-reconcile="restore"
+            >
+              Restore Tor-Only Mode
+            </button>
+          </div>
+          <div class="prop-item">
+            <span class="prop-label">Manual SSH Command (Mode B / Audit)</span>
+            <div class="prop-value-group">
+              <code id="mynode-manual-cmd" class="prop-value"
+                >sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh status</code
+              >
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="mynode-manual-cmd"
+                title="Copy manual CLI command"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <ul class="action-list">
+          <li id="action-buy" class="action-item action-item-with-icon">
+            <img src="icons/lightning.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Buy Subscription</span>
+              <span class="action-desc">
+                Pick a server and duration, then pay the Lightning invoice on
+                your node.
+              </span>
+            </div>
+          </li>
+          <li id="action-renew" class="action-item action-item-with-icon">
+            <img src="icons/timing.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Renew Subscription</span>
+              <span class="action-desc">
+                Extend the current WireGuard key without changing your port or
+                configuration.
+              </span>
+            </div>
+          </li>
+          <li id="action-reset" class="action-item action-item-with-icon">
+            <img src="icons/stack.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Reset Bandwidth</span>
+              <span class="action-desc">
+                Clear this month’s usage counter when you are close to the
+                limit.
+              </span>
+            </div>
+          </li>
+          <li
+            id="action-connect-wallet"
+            class="action-item action-item-with-icon"
+          >
+            <img src="NWC_icon.svg" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Connect Wallet (NWC Auto-Renew)</span>
+              <span class="action-desc">
+                Connect a Nostr Wallet Connect (NWC) URI for automatic renewal
+                within 7 days of expiry (optional Tor SOCKS5 routing).
+              </span>
+            </div>
+          </li>
+          <li id="action-import" class="action-item action-item-with-icon">
+            <img src="icons/documents.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Import Subscription</span>
+              <span class="action-desc">
+                Paste a WireGuard <code>.conf</code> file bought on
+                tunnelsats.com.
+              </span>
+            </div>
+          </li>
+          <li id="action-configure" class="action-item action-item-with-icon">
+            <img src="icons/connected.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Configure TunnelSats</span>
+              <span class="action-desc">
+                Choose the target node (LND, Core Lightning or Eclair), toggle
+                the service, or allow IPv6 inside the tunnel.
+              </span>
+            </div>
+          </li>
+          <li id="action-export" class="action-item action-item-with-icon">
+            <img src="icons/keys.png" alt="" class="brand-tile-icon-sm" />
+            <div class="action-item-body">
+              <span class="action-name">Export WireGuard Configuration</span>
+              <span class="action-desc">
+                Read the stored <code>.conf</code> file inside MyNode for
+                backup (includes your private key).
+              </span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <!-- TAB 3: VERIFY & CLI (Inbound Port Check + Node Egress CLI)        -->
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <div id="verify-section" class="verify-wrapper" hidden>
+        <!-- Inbound TCP Reachability Card -->
+        <section
+          id="reachability-card"
+          class="card reachability-card"
+          aria-labelledby="reachability-heading"
+        >
+          <div class="card-header-row">
+            <div class="card-title-with-icon">
+              <img src="icons/checkmark.png" alt="" class="brand-tile-icon" />
+              <h2 id="reachability-heading">Inbound Connection Check</h2>
+            </div>
+            <span class="badge-pill">TCP Port Reachability</span>
+          </div>
+          <p class="muted">
+            Asks TunnelSats to open a TCP connection to your node at
+            <code id="reach-target">Not configured</code>.
+            <strong
+              >Inbound TCP port check only; does not verify outbound VPN
+              egress.</strong
+            >
+          </p>
+          <div class="reach-form">
+            <label class="intent-field reach-field">
+              <span class="intent-field-label"
+                >Lightning node public key (66 hex characters)</span
+              >
+              <input
+                id="reach-pubkey"
+                class="reach-input"
+                type="text"
+                inputmode="latin"
+                autocomplete="off"
+                spellcheck="false"
+                maxlength="66"
+                pattern="0[23][0-9a-fA-F]{64}"
+                placeholder="02… or 03…"
+              />
+            </label>
+            <button
+              type="button"
+              id="btn-reachability"
+              class="btn-intent"
+              data-reachability
+            >
+              Check port
+            </button>
+          </div>
+          <p
+            id="reach-result"
+            class="reach-result"
+            role="status"
+            aria-live="polite"
+            hidden
+          ></p>
+        </section>
+
+        <!-- Node-Side Routing & Outbound Egress CLI Verification -->
+        <section id="privacy" class="card" aria-labelledby="privacy-heading">
+          <div class="card-header-row">
+            <div class="card-title-with-icon">
+              <img src="icons/shield.png" alt="" class="brand-tile-icon" />
+              <h2 id="privacy-heading">Verify Routing on the Node</h2>
+            </div>
+            <span class="badge-pill">Node Container CLI</span>
+          </div>
+          <p class="muted">
+            WireGuard runs inside the target Lightning node container, not in
+            TunnelSats. This page cannot see the node’s network stack; to check
+            the tunnel, attach to the node over SSH:
+          </p>
+          <div class="prop-item">
+            <span class="prop-label">Attach to target node</span>
+            <div class="prop-value-group">
+              <code id="attach-command" class="prop-value"
+                >ssh admin@mynode.local</code
+              >
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="attach-command"
+                title="Copy command"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+          <ul class="command-list">
+            <li>
+              <code id="cmd-wg-show">wg show</code>
+              <span>WireGuard interface and peer handshake</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-wg-show"
+                title="Copy wg show"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <code id="cmd-ip-rule">ip rule</code>
+              <span>Policy routing rules</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-ip-rule"
+                title="Copy ip rule"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <code id="cmd-ip-route">ip route show table 51820</code>
+              <span>Tunnel routing table</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-ip-route"
+                title="Copy ip route"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <code id="cmd-egress-v4"
+                >curl -4 --max-time 10 https://ifconfig.me</code
+              >
+              <span>IPv4 egress address (should be the VPN server)</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-egress-v4"
+                title="Copy IPv4 egress check"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <code id="cmd-egress-v6"
+                >curl -6 --max-time 10 https://ifconfig.me</code
+              >
+              <span>IPv6 egress (should fail unless IPv6 is enabled)</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-egress-v6"
+                title="Copy IPv6 egress check"
+              >
+                Copy
+              </button>
+            </li>
+          </ul>
+          <!-- prettier-ignore -->
+          <p class="muted caveat">
+            <strong>Kill switch:</strong> Egress protection is enforced by the
+            Lightning node package (<code>renderWgQuick</code>). Require
+            <strong>LND 0.21.3-beta:10, Core Lightning 26.6.8:3 or Eclair 0.14.3:3</strong>
+            or newer so the kill-switch rule stays armed if <code>wg0</code>
+            drops. If a subscription expires, renew it or turn off Clearnet over
+            VPN on the node.
+          </p>
+        </section>
+      </div>
+
+      <!-- -- Footer -- -->
+      <footer class="dashboard-footer">
+        <nav class="footer-links" aria-label="TunnelSats links">
+          <a
+            href="https://tunnelsats.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path
+                d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+              ></path>
+            </svg>
+            Website
+          </a>
+          <a
+            href="https://tunnelsats.com/guide"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            Guide
+          </a>
+          <button
+            type="button"
+            class="footer-link footer-btn-faq"
+            data-open-dialog="faq-modal"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            FAQ
+          </button>
+          <a
+            href="https://tunnelsats.com/status"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            Status
+          </a>
+          <a
+            href="https://tunnelsats.com/join-telegram"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+            Telegram
+          </a>
+          <a
+            href="https://primal.net/p/nprofile1qqsfj32jgnfp7asvcr5sj3ljar2v6elhm5560zfh0xqfeqsgl84s0rc37zmgx"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+              <path d="M2 17l10 5 10-5"></path>
+              <path d="M2 12l10 5 10-5"></path>
+            </svg>
+            Nostr
+          </a>
+          <a
+            href="https://x.com/TunnelSats"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="footer-link"
+          >
+            <svg
+              class="footer-link-icon"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+              />
+            </svg>
+            X
+          </a>
+        </nav>
+        <p class="footer-meta">
+          <span class="footer-product">TunnelSats for MyNode</span>
+          <span id="footer-version" class="footer-version"></span>
+          <a
+            href="https://github.com/Tunnelsats/ts-mynode"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="github-link"
+          >
+            Source on GitHub
+          </a>
+        </p>
+      </footer>
+    </main>
+
+    <!-- -- Bandwidth Details Modal -- -->
+    <dialog
+      id="bandwidth-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="bandwidth-modal-title"
+    >
+      <div class="modal-dialog-inner">
+        <div class="modal-header">
+          <h2 id="bandwidth-modal-title">Monthly Bandwidth</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="bandwidth-visual-card">
+            <div class="bandwidth-stat-main">
+              <span id="modal-bandwidth-used" class="stat-big-num">0.00</span>
+              <span id="modal-bandwidth-limit" class="stat-unit"
+                >GB / 100 GB</span
+              >
+            </div>
+            <meter
+              id="modal-bandwidth-meter"
+              class="gauge gauge-bandwidth gauge-lg"
+              min="0"
+              max="100"
+              low="70"
+              high="90"
+              optimum="20"
+              value="0"
+              aria-label="Bandwidth used this month"
+            ></meter>
+          </div>
+          <ul class="bandwidth-facts">
+            <li>
+              <strong>Monthly allowance:</strong> 100 GB (combined upload +
+              download). Usage resets for free on the 1st of each month.
+            </li>
+            <li>
+              <strong>Paid reset:</strong> Run
+              <span class="path"
+                >Services → TunnelSats → Actions → Reset Bandwidth</span
+              >
+              when usage is high.
+            </li>
+            <li>
+              <strong>Source:</strong> Reported by the TunnelSats status API
+              during the periodic subscription sync.
+            </li>
+          </ul>
+          <a
+            href="https://tunnelsats.com/faq#what-happens-if-i-reach-the-100gb-limit"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="accent-link bandwidth-faq-link"
+          >
+            Read the bandwidth FAQ on tunnelsats.com
+            <svg
+              class="accent-link-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M7 17 17 7M8 7h9v9" />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- -- Bandwidth Reset Confirmation -- -->
+    <dialog
+      id="reset-confirm-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="reset-confirm-title"
+      aria-describedby="reset-confirm-facts"
+    >
+      <div class="modal-dialog-inner confirm-dialog-inner">
+        <div class="modal-header">
+          <h2 id="reset-confirm-title">Reset bandwidth usage to 0?</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <ul id="reset-confirm-facts" class="bandwidth-facts">
+            <li>
+              Usage for this month is not known yet, so a reset now may give
+              back little.
+            </li>
+          </ul>
+          <p class="muted">
+            TunnelSats creates the invoice, and a Pay Invoice task is raised on
+            your Lightning node.
+          </p>
+          <div class="modal-actions">
+            <button
+              type="button"
+              id="btn-cancel-reset"
+              class="btn-intent btn-intent-secondary"
+              data-close-dialog
+              autofocus
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              id="btn-confirm-reset"
+              class="btn-intent"
+              data-submit-intent="reset"
+            >
+              Reset for $1.00
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- -- FAQ Modal -- -->
+    <dialog
+      id="faq-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="faq-modal-title"
+    >
+      <div class="modal-dialog-inner faq-dialog-inner">
+        <div class="modal-header">
+          <h2 id="faq-modal-title">Frequently Asked Questions</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body faq-body">
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              How does TunnelSats work on MyNode?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                TunnelSats manages your subscription and passes a WireGuard
+                configuration to your Lightning node package
+                (<strong>LND</strong>, <strong>Core Lightning</strong> or
+                <strong>Eclair</strong>) through its
+                <code>clearnet-vpn</code> action. The WireGuard interface runs
+                inside the node container itself.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              How do I buy, renew or import a subscription?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                Use the interactive Server Region and Duration pills directly on
+                this dashboard, or open
+                <strong>Services → TunnelSats → Actions</strong> in MyNode:
+              </p>
+              <ul>
+                <li>
+                  <strong>Buy Subscription</strong> creates a WireGuard key on
+                  this server, fetches a Lightning invoice, and raises a
+                  <strong>Pay Invoice</strong> task on your node.
+                </li>
+                <li>
+                  <strong>Renew Subscription</strong> extends the current
+                  WireGuard key in place.
+                </li>
+                <li>
+                  <strong>Import Subscription</strong> installs a
+                  <code>.conf</code> file bought on tunnelsats.com.
+                </li>
+              </ul>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              Does MyNode support automatic subscription renewal?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                <strong>Yes, via Nostr Wallet Connect (NWC).</strong> Run
+                <strong
+                  >Services → TunnelSats → Actions → Connect Wallet</strong
+                >
+                and paste a <code>nostr+walletconnect://</code> URI (Alby Hub,
+                LNBits, Cashu/Minibits, or self-hosted NWC). When your
+                subscription is within 7 days of expiry, TunnelSats requests a
+                renewal invoice and pays it automatically (with optional Tor
+                SOCKS5 routing).
+              </p>
+              <p class="faq-note">
+                If the wallet balance or budget is too low, or NWC fails 3
+                times, TunnelSats raises a <strong>Pay Invoice</strong> task on
+                your node and a <strong>Connect Wallet</strong> task so you can
+                renew manually. Without NWC, reminders are posted at
+                <strong>7 days</strong> and <strong>3 days</strong> before
+                expiry.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              How do I switch between LND, Core Lightning and Eclair?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                Run
+                <strong
+                  >Services → TunnelSats → Actions → Configure
+                  TunnelSats</strong
+                >
+                and select the new target node. TunnelSats waits for the
+                previous node to turn off its tunnel before raising the task on
+                the new node, so two nodes never share one WireGuard peer.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              What happens if the VPN drops or my subscription expires?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                When a subscription expires, the TunnelSats server disables the
+                WireGuard peer and clearnet peer traffic stops working through
+                TunnelSats. Renew the subscription or turn off
+                <strong>Clearnet over VPN</strong> on the node.
+              </p>
+              <p class="faq-note">
+                The kill switch is part of the Lightning node package. Require
+                <strong
+                  >LND 0.21.3-beta:10, Core Lightning 26.6.8:3 or Eclair
+                  0.14.3:3</strong
+                >
+                or newer so the kill-switch rule stays armed if
+                <code>wg0</code> goes down.
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              Why can I not paste my WireGuard config into this page?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                A WireGuard configuration contains your private key. MyNode
+                service web interfaces are reachable on the local network
+                without a login, so private keys and configuration writes are
+                handled only inside authenticated MyNode Actions.
+              </p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="script.js"></script>
+  </body>
+</html>

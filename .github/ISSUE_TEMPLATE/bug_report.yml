@@ -1,0 +1,49 @@
+name: Bug Report
+description: Create a report to help us improve.
+title: "[BUG] <Short description>"
+labels: ["bug"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug. Please first verify that your issue has not already been reported!
+  - type: input
+    id: version
+    attributes:
+      label: TunnelSats App Version
+      description: What version of the myNode app are you using? e.g., v0.1.0
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: mynode_version
+    attributes:
+      label: myNode Version
+      description: What version of myNode BTC are you running?
+      placeholder: v0.3.x
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How do we reproduce this issue?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Any error messages from journalctl -u tunnelsats or sudo tunnelsats verify. (Avoid posting sensitive info like private keys!)
+      render: shell

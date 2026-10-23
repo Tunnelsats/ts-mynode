@@ -1,0 +1,52 @@
+name: Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: ["main", "feat/**"]
+
+permissions: {}
+
+concurrency:
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (wireguard-tools, bats, shellcheck)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends wireguard-tools bats shellcheck
+
+      - name: Validate MyNode App SDK v2 package
+        run: python3 scripts/check_mynode_app.py
+
+      - name: Run Python unit & integration tests
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Run BATS reconciler tests
+        run: bats tests/*.bats
+
+      - name: Run ShellCheck on MyNode & reconciler scripts
+        run: |
+          shellcheck -x \
+            mynode_app/tunnelsats/scripts/*.sh \
+            scripts/reconcile_mynode.sh \
+            scripts/deploy_mynode.sh \
+            scripts/test.sh
