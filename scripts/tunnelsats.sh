@@ -6749,7 +6749,7 @@ ts_m_inventory_read() {
     TS_M_CREATED_DIRS=()
     TS_M_ENABLED_UNITS=()
     TS_M_ERROR=""
-    if [[ ! -f "$f" ]] || [[ ! -r "$f" ]]; then
+    if [[ -L "$f" ]] || [[ ! -f "$f" ]] || [[ ! -r "$f" ]]; then
         TS_M_ERROR="inventory ${TS_M_INVENTORY} missing or unreadable"
         return 1
     fi
@@ -7941,16 +7941,25 @@ ts_m_cmd_verifier() {
 # are missing. Fails closed (exits 1) if the inventory, tunnel config or lnd.conf cannot be
 # read or updated when expected.
 ts_m_cmd_mynode_lnd_pre() {
+    local inv_file="${TS_FS_ROOT}${TS_M_INVENTORY}"
     local wg_conf="${TS_FS_ROOT}${TS_M_WG_CONF}"
     local custom_conf="${TS_FS_ROOT}/mnt/hdd/mynode/settings/lnd_custom.conf"
     local extra_conf="${TS_FS_ROOT}/mnt/hdd/mynode/settings/lnd_extra_config.conf"
     local lnd_conf="${TS_FS_ROOT}/mnt/hdd/mynode/lnd/lnd.conf"
-    local src entry key val vpn_dns="" vpn_port=""
-    local want_listen="" want_exthosts="" want_streamiso="" want_skipproxy="" has_hybrid=0
-    local cur_listen="" cur_exthosts="" cur_streamiso="" cur_skipproxy=""
-    local add_listen="" add_exthosts="" add_streamiso="" add_skipproxy=""
+    local src entry key val w c found vpn_dns="" vpn_port=""
+    local -a want_listens=() want_exthosts=() cur_listens=() cur_exthosts=() add_listens=() add_exthosts=()
+    local want_streamiso="" want_skipproxy="" has_hybrid=0
+    local cur_streamiso="" cur_skipproxy=""
+    local listen_port="9735" want_ipv4_wild=0 want_ipv6_wild=0
+    local conflict_listen=0 dup_listen=0 dup_exthost=0 fix_listen=0 fix_exthosts=0
+    local add_streamiso="" add_skipproxy=""
+    local add_listens_nl="" want_listens_nl="" add_exthosts_nl=""
     local tmp mode="" owner=""
 
+    if [[ -L "$inv_file" ]]; then
+        ts_m_log "managed-mynode-lnd-pre: ${TS_M_INVENTORY} is a symlink"
+        exit 1
+    fi
     if ! ts_m_inventory_read; then
         ts_m_log "managed-mynode-lnd-pre: install record unreadable (${TS_M_ERROR})"
         exit 1
@@ -7983,13 +7992,21 @@ ts_m_cmd_mynode_lnd_pre() {
                 case "$key" in
                     listen)
                         if [[ "$val" =~ :9735$ ]]; then
-                            want_listen="$val"
+                            found=0
+                            for w in "${want_listens[@]}"; do
+                                [[ "${w,,}" == "${val,,}" ]] && { found=1; break; }
+                            done
+                            [[ "$found" -eq 0 ]] && want_listens+=("$val")
                         fi
                         ;;
                     externalhosts)
                         if [[ -n "$val" ]]; then
-                            want_exthosts="$val"
                             has_hybrid=1
+                            found=0
+                            for w in "${want_exthosts[@]}"; do
+                                [[ "${w,,}" == "${val,,}" ]] && { found=1; break; }
+                            done
+                            [[ "$found" -eq 0 ]] && want_exthosts+=("$val")
                         fi
                         ;;
                     tor.streamisolation)
@@ -8021,9 +8038,19 @@ ts_m_cmd_mynode_lnd_pre() {
         exit 0
     fi
 
-    [[ -z "$want_listen" ]] && want_listen="0.0.0.0:9735"
-    if [[ -z "$want_exthosts" ]] && [[ -n "$vpn_dns" ]] && [[ -n "$vpn_port" ]]; then
-        want_exthosts="${vpn_dns}:${vpn_port}"
+    if [[ ${#want_listens[@]} -eq 0 ]]; then
+        want_listens=("0.0.0.0:9735")
+    fi
+    listen_port="${want_listens[0]##*:}"
+    [[ "$listen_port" =~ ^[0-9]+$ ]] || listen_port="9735"
+    for w in "${want_listens[@]}"; do
+        case "${w,,}" in
+            "0.0.0.0:${listen_port}"|":${listen_port}"|"${listen_port}") want_ipv4_wild=1 ;;
+            "[::]:${listen_port}") want_ipv6_wild=1 ;;
+        esac
+    done
+    if [[ ${#want_exthosts[@]} -eq 0 ]] && [[ -n "$vpn_dns" ]] && [[ -n "$vpn_port" ]]; then
+        want_exthosts=("${vpn_dns}:${vpn_port}")
     fi
     [[ -z "$want_streamiso" ]] && want_streamiso="false"
     [[ -z "$want_skipproxy" ]] && want_skipproxy="true"
@@ -8034,13 +8061,43 @@ ts_m_cmd_mynode_lnd_pre() {
         val="${entry#*|}"
         case "$key" in
             listen)
-                if [[ "$val" == "$want_listen" ]] || [[ "$val" =~ ^(0\.0\.0\.0||\[::\]):9735$ ]]; then
-                    cur_listen="$val"
+                found=0
+                for c in "${cur_listens[@]}"; do
+                    [[ "${c,,}" == "${val,,}" ]] && { found=1; break; }
+                done
+                if [[ "$found" -eq 1 ]]; then
+                    dup_listen=1
+                else
+                    cur_listens+=("$val")
+                fi
+                found=0
+                for w in "${want_listens[@]}"; do
+                    [[ "${w,,}" == "${val,,}" ]] && { found=1; break; }
+                done
+                if [[ "$found" -eq 0 ]]; then
+                    case "${val,,}" in
+                        localhost|"localhost:${listen_port}"|127.0.0.1|"127.0.0.1:${listen_port}"|"[::1]"|"[::1]:${listen_port}")
+                            conflict_listen=1
+                            ;;
+                        *)
+                            if [[ "$want_ipv4_wild" -eq 1 ]] && [[ "$val" != \[* ]] && [[ "$val" == *":${listen_port}" || "$val" == "${listen_port}" ]]; then
+                                conflict_listen=1
+                            elif [[ "$want_ipv6_wild" -eq 1 ]] && [[ "${val,,}" == \[*\]:"${listen_port}" ]]; then
+                                conflict_listen=1
+                            fi
+                            ;;
+                    esac
                 fi
                 ;;
             externalhosts)
-                if [[ "$val" == "$want_exthosts" ]]; then
-                    cur_exthosts="$val"
+                found=0
+                for c in "${cur_exthosts[@]}"; do
+                    [[ "${c,,}" == "${val,,}" ]] && { found=1; break; }
+                done
+                if [[ "$found" -eq 1 ]]; then
+                    dup_exthost=1
+                else
+                    cur_exthosts+=("$val")
                 fi
                 ;;
             tor.streamisolation)
@@ -8058,21 +8115,75 @@ ts_m_cmd_mynode_lnd_pre() {
         esac
     done < <(ts_m_config_settings "$lnd_conf")
 
-    [[ -z "$cur_listen" ]] && add_listen="$want_listen"
-    [[ -n "$want_exthosts" && -z "$cur_exthosts" ]] && add_exthosts="$want_exthosts"
+    for w in "${want_listens[@]}"; do
+        found=0
+        for c in "${cur_listens[@]}"; do
+            [[ "${c,,}" == "${w,,}" ]] && { found=1; break; }
+        done
+        [[ "$found" -eq 0 ]] && add_listens+=("$w")
+    done
+    if [[ ${#add_listens[@]} -gt 0 || "$conflict_listen" -eq 1 || "$dup_listen" -eq 1 ]]; then
+        fix_listen=1
+    fi
+
+    for w in "${want_exthosts[@]}"; do
+        found=0
+        for c in "${cur_exthosts[@]}"; do
+            [[ "${c,,}" == "${w,,}" ]] && { found=1; break; }
+        done
+        [[ "$found" -eq 0 ]] && add_exthosts+=("$w")
+    done
+    if [[ ${#add_exthosts[@]} -gt 0 || "$dup_exthost" -eq 1 ]]; then
+        fix_exthosts=1
+    fi
+
     [[ -z "$cur_streamiso" ]] && add_streamiso="$want_streamiso"
     [[ -z "$cur_skipproxy" ]] && add_skipproxy="$want_skipproxy"
 
-    if [[ -z "$add_listen" && -z "$add_exthosts" && -z "$add_streamiso" && -z "$add_skipproxy" ]]; then
+    if [[ "$fix_listen" -eq 0 && "$fix_exthosts" -eq 0 && -z "$add_streamiso" && -z "$add_skipproxy" ]]; then
         exit 0
+    fi
+
+    if [[ ${#add_listens[@]} -gt 0 ]]; then
+        add_listens_nl=$(printf '%s\n' "${add_listens[@]}")
+    fi
+    if [[ ${#want_listens[@]} -gt 0 ]]; then
+        want_listens_nl=$(printf '%s\n' "${want_listens[@]}")
+    fi
+    if [[ ${#add_exthosts[@]} -gt 0 ]]; then
+        add_exthosts_nl=$(printf '%s\n' "${add_exthosts[@]}")
     fi
 
     mode=$(stat -c '%a' "$lnd_conf" 2>/dev/null || echo "640")
     owner=$(stat -c '%u:%g' "$lnd_conf" 2>/dev/null || echo "")
     tmp="${lnd_conf}.tunnelsats.tmp.$$"
-    if ! awk -v add_listen="$add_listen" -v add_exthosts="$add_exthosts" \
-        -v add_streamiso="$add_streamiso" -v add_skipproxy="$add_skipproxy" '
-        BEGIN { app_done = 0; tor_done = 0 }
+    if ! awk \
+        -v fix_listen="$fix_listen" \
+        -v add_listens_nl="$add_listens_nl" \
+        -v want_listens_nl="$want_listens_nl" \
+        -v listen_port="$listen_port" \
+        -v want_ipv4_wild="$want_ipv4_wild" \
+        -v want_ipv6_wild="$want_ipv6_wild" \
+        -v fix_exthosts="$fix_exthosts" \
+        -v add_exthosts_nl="$add_exthosts_nl" \
+        -v add_streamiso="$add_streamiso" \
+        -v add_skipproxy="$add_skipproxy" '
+        BEGIN {
+            app_done = 0
+            tor_done = 0
+            n_add_l = split(add_listens_nl, add_l, "\n")
+            for (i = 1; i <= n_add_l; i++) {
+                if (add_l[i] != "") seen_listen[tolower(add_l[i])] = 1
+            }
+            n_want_l = split(want_listens_nl, want_l, "\n")
+            for (i = 1; i <= n_want_l; i++) {
+                if (want_l[i] != "") is_want_listen[tolower(want_l[i])] = 1
+            }
+            n_add_e = split(add_exthosts_nl, add_e, "\n")
+            for (i = 1; i <= n_add_e; i++) {
+                if (add_e[i] != "") seen_exthost[tolower(add_e[i])] = 1
+            }
+        }
         {
             trimmed = $0
             sub(/\r$/, "", trimmed)
@@ -8081,8 +8192,12 @@ ts_m_cmd_mynode_lnd_pre() {
             low = tolower(trimmed)
             if (low == "[application options]" && !app_done) {
                 print $0
-                if (add_listen != "") print "listen=" add_listen
-                if (add_exthosts != "") print "externalhosts=" add_exthosts
+                for (i = 1; i <= n_add_l; i++) {
+                    if (add_l[i] != "") print "listen=" add_l[i]
+                }
+                for (i = 1; i <= n_add_e; i++) {
+                    if (add_e[i] != "") print "externalhosts=" add_e[i]
+                }
                 app_done = 1
                 next
             }
@@ -8093,17 +8208,52 @@ ts_m_cmd_mynode_lnd_pre() {
                 tor_done = 1
                 next
             }
-            if (add_exthosts != "" && low ~ /^externalhosts[[:space:]]*=/) next
+            if (fix_listen && low ~ /^listen[[:space:]]*=/) {
+                v = trimmed
+                sub(/^[^=]*=[[:space:]]*/, "", v)
+                lv = tolower(v)
+                if (seen_listen[lv]) next
+                if (!is_want_listen[lv]) {
+                    if (lv == "localhost" || lv == ("localhost:" listen_port) ||
+                        lv == "127.0.0.1" || lv == ("127.0.0.1:" listen_port) ||
+                        lv == "[::1]" || lv == ("[::1]:" listen_port)) next
+                    if (want_ipv4_wild && substr(lv, 1, 1) != "[" &&
+                        (lv == listen_port || lv ~ (":" listen_port "$"))) next
+                    if (want_ipv6_wild && substr(lv, 1, 1) == "[" &&
+                        lv ~ ("\\]:" listen_port "$")) next
+                }
+                seen_listen[lv] = 1
+                print $0
+                next
+            }
+            if (fix_exthosts && low ~ /^externalhosts[[:space:]]*=/) {
+                v = trimmed
+                sub(/^[^=]*=[[:space:]]*/, "", v)
+                lv = tolower(v)
+                if (seen_exthost[lv]) next
+                seen_exthost[lv] = 1
+                print $0
+                next
+            }
             if (add_streamiso != "" && low ~ /^tor\.streamisolation[[:space:]]*=/) next
             if (add_skipproxy != "" && low ~ /^tor\.skip-proxy-for-clearnet-targets([[:space:]]*=|$)/) next
             print $0
         }
         END {
-            if (!app_done && (add_listen != "" || add_exthosts != "")) {
-                print ""
-                print "[Application Options]"
-                if (add_listen != "") print "listen=" add_listen
-                if (add_exthosts != "") print "externalhosts=" add_exthosts
+            if (!app_done && (n_add_l > 0 || n_add_e > 0)) {
+                has_app_adds = 0
+                for (i = 1; i <= n_add_l; i++) if (add_l[i] != "") has_app_adds = 1
+                for (i = 1; i <= n_add_e; i++) if (add_e[i] != "") has_app_adds = 1
+                if (has_app_adds) {
+                    print ""
+                    print "[Application Options]"
+                    for (i = 1; i <= n_add_l; i++) {
+                        if (add_l[i] != "") print "listen=" add_l[i]
+                    }
+                    for (i = 1; i <= n_add_e; i++) {
+                        if (add_e[i] != "") print "externalhosts=" add_e[i]
+                    }
+                }
             }
             if (!tor_done && (add_streamiso != "" || add_skipproxy != "")) {
                 print ""
@@ -8126,15 +8276,19 @@ ts_m_cmd_mynode_lnd_pre() {
         exit 1
     fi
 
-    cur_exthosts=""
+    cur_listens=()
+    cur_exthosts=()
     cur_skipproxy=""
     while IFS= read -r entry; do
         entry="${entry#*|}"
         key="${entry%%|*}"
         val="${entry#*|}"
         case "$key" in
+            listen)
+                cur_listens+=("$val")
+                ;;
             externalhosts)
-                [[ "$val" == "$want_exthosts" ]] && cur_exthosts="$val"
+                cur_exthosts+=("$val")
                 ;;
             tor.skip-proxy-for-clearnet-targets)
                 case "${val,,}" in
@@ -8143,7 +8297,27 @@ ts_m_cmd_mynode_lnd_pre() {
                 ;;
         esac
     done < <(ts_m_config_settings "$lnd_conf")
-    if { [[ -n "$want_exthosts" ]] && [[ -z "$cur_exthosts" ]]; } || [[ -z "$cur_skipproxy" ]]; then
+    for w in "${want_listens[@]}"; do
+        found=0
+        for c in "${cur_listens[@]}"; do
+            [[ "${c,,}" == "${w,,}" ]] && { found=1; break; }
+        done
+        if [[ "$found" -eq 0 ]]; then
+            ts_m_log "managed-mynode-lnd-pre: read-back verification of /mnt/hdd/mynode/lnd/lnd.conf failed"
+            exit 1
+        fi
+    done
+    for w in "${want_exthosts[@]}"; do
+        found=0
+        for c in "${cur_exthosts[@]}"; do
+            [[ "${c,,}" == "${w,,}" ]] && { found=1; break; }
+        done
+        if [[ "$found" -eq 0 ]]; then
+            ts_m_log "managed-mynode-lnd-pre: read-back verification of /mnt/hdd/mynode/lnd/lnd.conf failed"
+            exit 1
+        fi
+    done
+    if [[ -z "$cur_skipproxy" ]]; then
         ts_m_log "managed-mynode-lnd-pre: read-back verification of /mnt/hdd/mynode/lnd/lnd.conf failed"
         exit 1
     fi
@@ -8676,7 +8850,8 @@ ts_m_node_config_files() {
         esac
     fi
     if [[ "$impl" == "lnd" ]] && { [[ -d "${TS_FS_ROOT}/usr/share/mynode" ]] || [[ -d "${TS_FS_ROOT}/mnt/hdd/mynode" ]]; } && \
-        { [[ -z "$conf" ]] || [[ "$conf" == /mnt/hdd/mynode/* ]]; }; then
+        { [[ -z "$conf" ]] || [[ "$conf" == /mnt/hdd/mynode/* ]] || [[ "$conf" == */.lnd/lnd.conf ]] || \
+          [[ "${TS_FS_ROOT}${conf}" -ef "${TS_FS_ROOT}/mnt/hdd/mynode/lnd/lnd.conf" ]]; }; then
         local -a mn_cands=(/mnt/hdd/mynode/settings/lnd_custom.conf /mnt/hdd/mynode/settings/lnd_extra_config.conf /mnt/hdd/mynode/lnd/lnd.conf)
         for f in "${candidates[@]}"; do
             if ! ts_in_list "$f" "${mn_cands[*]}"; then
@@ -9110,15 +9285,21 @@ ts_m_install_preflight() {
         ts_fail 7 E_PLATFORM_UNSUPPORTED refused "--platform ${TS_OPT_PLATFORM} does not match the managed profile ${profile}"
     fi
     case "$profile:$guess" in
-        baremetal:|raspiblitz:raspiblitz) ;;
+        baremetal:|raspiblitz:raspiblitz|mynode:mynode) ;;
         baremetal:raspiblitz)
             ts_fail 7 E_PLATFORM_UNSUPPORTED refused "This node is a RaspiBlitz: use 'install --managed raspiblitz --impl lnd|cln'"
+            ;;
+        baremetal:mynode)
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "This node is a myNode: use 'install --managed mynode'"
             ;;
         raspiblitz:*)
             ts_fail 7 E_PLATFORM_UNSUPPORTED refused "The raspiblitz profile needs a RaspiBlitz (detected: ${guess:-no RaspiBlitz})"
             ;;
+        mynode:*)
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "The mynode profile needs a myNode (detected: ${guess:-no myNode})"
+            ;;
         *)
-            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "Managed mode supports bare-metal systemd nodes and RaspiBlitz only for now (detected: ${guess})"
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "Managed mode supports bare-metal systemd nodes, RaspiBlitz and myNode only for now (detected: ${guess})"
             ;;
     esac
     if [[ ! -d "${TS_FS_ROOT}/run/systemd/system" ]]; then
@@ -9613,11 +9794,11 @@ cmd_install_managed() {
     local answer="" ln_was_active=0 ln_restarted=0 tunnel_started=0 rc=0 out
     ts_m_require_root
     case "$TS_OPT_PROFILE" in
-        baremetal|raspiblitz) ;;
-        umbrel|mynode)
-            ts_fail 7 E_PROFILE_UNSUPPORTED refused "Managed mode supports the baremetal and raspiblitz profiles only for now (requested: ${TS_OPT_PROFILE})"
+        baremetal|raspiblitz|mynode) ;;
+        umbrel)
+            ts_fail 7 E_PROFILE_UNSUPPORTED refused "Managed mode supports the baremetal, raspiblitz and mynode profiles only for now (requested: ${TS_OPT_PROFILE})"
             ;;
-        *) ts_usage_error "--managed requires a profile for install (baremetal or raspiblitz)" ;;
+        *) ts_usage_error "--managed requires a profile for install (baremetal, raspiblitz or mynode)" ;;
     esac
     ts_m_lifecycle_lock
     if [[ "$TS_JSON" -ne 1 ]]; then
@@ -9786,15 +9967,21 @@ ts_m_adopt_preflight() {
         ts_fail 7 E_PLATFORM_UNSUPPORTED refused "--platform ${TS_OPT_PLATFORM} does not match the managed profile ${profile}"
     fi
     case "$profile:$guess" in
-        baremetal:|raspiblitz:raspiblitz) ;;
+        baremetal:|raspiblitz:raspiblitz|mynode:mynode) ;;
         baremetal:raspiblitz)
             ts_fail 7 E_PLATFORM_UNSUPPORTED refused "This node is a RaspiBlitz: use 'adopt --managed raspiblitz --impl lnd|cln'"
+            ;;
+        baremetal:mynode)
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "This node is a myNode: use 'adopt --managed mynode'"
             ;;
         raspiblitz:*)
             ts_fail 7 E_PLATFORM_UNSUPPORTED refused "The raspiblitz profile needs a RaspiBlitz (detected: ${guess:-no RaspiBlitz})"
             ;;
+        mynode:*)
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "The mynode profile needs a myNode (detected: ${guess:-no myNode})"
+            ;;
         *)
-            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "Managed mode supports bare-metal systemd nodes and RaspiBlitz only for now (detected: ${guess})"
+            ts_fail 7 E_PLATFORM_UNSUPPORTED refused "Managed mode supports bare-metal systemd nodes, RaspiBlitz and myNode only for now (detected: ${guess})"
             ;;
     esac
     if [[ ! -d "${TS_FS_ROOT}/run/systemd/system" ]]; then
@@ -9940,11 +10127,11 @@ cmd_adopt_managed() {
     local wg_full="${TS_FS_ROOT}${wg_rel}"
     ts_m_require_root
     case "$TS_OPT_PROFILE" in
-        baremetal|raspiblitz) ;;
-        umbrel|mynode)
-            ts_fail 7 E_PROFILE_UNSUPPORTED refused "Managed mode supports the baremetal and raspiblitz profiles only for now (requested: ${TS_OPT_PROFILE})"
+        baremetal|raspiblitz|mynode) ;;
+        umbrel)
+            ts_fail 7 E_PROFILE_UNSUPPORTED refused "Managed mode supports the baremetal, raspiblitz and mynode profiles only for now (requested: ${TS_OPT_PROFILE})"
             ;;
-        *) ts_usage_error "--managed requires a profile for adopt (baremetal or raspiblitz)" ;;
+        *) ts_usage_error "--managed requires a profile for adopt (baremetal, raspiblitz or mynode)" ;;
     esac
     ts_m_lifecycle_lock
     if [[ "$TS_JSON" -ne 1 ]]; then
@@ -10653,7 +10840,7 @@ cmd_uninstall_managed() {
                 local -a leg_units=() leg_active_units=() leg_disabled_units=() leg_nc_lines=()
                 local leg_u leg_state leg_impl leg_prof leg_nc_reason=""
                 leg_prof=$(ts_guess_platform "$TS_FS_ROOT")
-                [[ "$leg_prof" != "raspiblitz" ]] && leg_prof="baremetal"
+                [[ "$leg_prof" != "raspiblitz" && "$leg_prof" != "mynode" ]] && leg_prof="baremetal"
                 for leg_u in lnd.service tlnd.service slnd.service lightningd.service tlightningd.service slightningd.service litd.service lit.service; do
                     if [[ -f "${TS_FS_ROOT}/etc/systemd/system/${leg_u}" ]] || [[ "$(ts_m_unit_prop "$leg_u" LoadState)" == "loaded" ]]; then
                         leg_units+=("$leg_u")
