@@ -147,9 +147,8 @@ class TestBridgeMyNode(unittest.TestCase):
         code, body = bridge.run_mynode_reconciler("apply")
         self.assertEqual(code, 403)
         self.assertTrue(body["secureMode"])
-        self.assertIn("reconcile_mynode.sh apply", body["manualCommand"])
-        self.assertIn("VPN_EXTERNAL_HOST=eu1.tunnelsats.com", body["manualCommand"])
-        self.assertIn("VPN_PORT=34567", body["manualCommand"])
+        self.assertIn("/usr/local/sbin/tunnelsats-reconcile apply", body["manualCommand"])
+        self.assertIn("tunnelsatsv2.conf", body["manualCommand"])
 
         # Switch back to Mode A (Integrated Mode) and verify block-insert via reconciler status
         bridge.set_secure_mode(False)
@@ -158,9 +157,27 @@ class TestBridgeMyNode(unittest.TestCase):
             "alias=my-node\n# BEGIN TUNNELSATS\nexternalhosts=eu1.tunnelsats.com:34567\n# END TUNNELSATS\n",
             encoding="utf-8",
         )
-        mn_status = bridge.get_mynode_reconciler_status()
+        managed_inv = self.root / "managed.json"
+        managed_inv.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "state": "installed",
+                    "profile": "mynode",
+                    "impl": "lnd",
+                    "unit": "lnd.service",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with mock.patch.dict(os.environ, {"MANAGED_INVENTORY": str(managed_inv)}):
+            mn_status = bridge.get_mynode_reconciler_status()
         self.assertTrue(mn_status["lndExtraConfigured"])
         self.assertEqual(mn_status["externalHost"], "eu1.tunnelsats.com:34567")
+        self.assertTrue(mn_status["managedInstalled"])
+        self.assertEqual(mn_status["managedProfile"], "mynode")
+        self.assertEqual(mn_status["managedImpl"], "lnd")
+        self.assertEqual(mn_status["managedUnit"], "lnd.service")
 
     def test_intents_and_in_process_execution_and_settlement(self):
         code, resp = bridge.submit_dashboard_intent(
@@ -343,6 +360,80 @@ class TestBridgeMyNode(unittest.TestCase):
         self.assertEqual(h6.status_code, 200)
         resp_json = json.loads(h6.wfile.getvalue().decode("utf-8"))
         self.assertTrue(resp_json["secureMode"])
+
+    def test_config_export_and_import_with_apply_now(self):
+        csrf = bridge.get_csrf_token()
+
+        # 1. Export returns 404 when unconfigured
+        code, body = bridge.export_wireguard_config()
+        self.assertEqual(code, 404)
+        self.assertIn("No WireGuard configuration", body["error"])
+
+        # 2. HTTP POST /api/config/export rejects missing CSRF token with 403
+        h_no_csrf = _FakeHTTPRequestHandler(
+            "POST",
+            "/api/config/export",
+            headers={
+                "Host": "mynode.local:8740",
+                "Content-Type": "application/json",
+            },
+            body=b"{}",
+            client_ip="127.0.0.1",
+        )
+        h_no_csrf.do_POST()
+        self.assertEqual(h_no_csrf.status_code, 403)
+
+        # 3. Import with applyNow=True calls run_mynode_reconciler("apply") in Mode A
+        with mock.patch.object(bridge, "lazy_sync", return_value="confirmed"), mock.patch.object(
+            bridge,
+            "run_mynode_reconciler",
+            return_value=(200, {"status": "ok", "action": "apply", "returncode": 0}),
+        ) as mock_reconcile:
+            code, import_resp = bridge.import_wireguard_config(
+                {"config": SAMPLE_WG_CONF, "applyNow": True}
+            )
+            self.assertEqual(code, 200)
+            self.assertEqual(import_resp["pubkey"], SAMPLE_PUBKEY)
+            self.assertIn("reconcile", import_resp)
+            self.assertEqual(import_resp["reconcile"]["status"], "ok")
+            mock_reconcile.assert_called_once_with("apply")
+
+        # 4. HTTP POST /api/config/export with valid CSRF returns 200 and stored config
+        h_exp = _FakeHTTPRequestHandler(
+            "POST",
+            "/api/config/export",
+            headers={
+                "Host": "mynode.local:8740",
+                "Origin": "https://mynode.local:8740",
+                "Content-Type": "application/json",
+                "Content-Length": "2",
+                "X-CSRF-Token": csrf,
+            },
+            body=b"{}",
+            client_ip="127.0.0.1",
+        )
+        h_exp.do_POST()
+        self.assertEqual(h_exp.status_code, 200)
+        exp_json = json.loads(h_exp.wfile.getvalue().decode("utf-8"))
+        self.assertEqual(exp_json["status"], "ok")
+        self.assertEqual(exp_json["publicKey"], SAMPLE_PUBKEY)
+        self.assertIn(SAMPLE_PRIVKEY, exp_json["config"])
+
+    def test_web_ui_modals_and_no_startos_strings(self):
+        html_text = (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        js_text = (REPO_ROOT / "web" / "script.js").read_text(encoding="utf-8")
+        for modal_id in ("import-config-modal", "export-config-modal", "nwc-wallet-modal"):
+            self.assertIn(modal_id, html_text)
+            self.assertIn(modal_id, js_text)
+        for tel_id in ("mynode-val-mode", "mynode-val-managed", "mynode-val-lnd-extra"):
+            self.assertIn(tel_id, html_text)
+            self.assertIn(tel_id, js_text)
+        self.assertNotIn("StartOS", html_text)
+        self.assertNotIn("StartOS", js_text)
+        self.assertNotIn("Services → TunnelSats → Actions", html_text)
+        self.assertNotIn("Services → TunnelSats → Actions", js_text)
+        self.assertNotIn("\u2014", html_text)
+        self.assertNotIn("\u2014", js_text)
 
 
 def _iso_future(hours):

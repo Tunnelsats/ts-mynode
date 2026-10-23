@@ -204,8 +204,8 @@
           <span id="invoice-expiry" class="badge-pill">Expires soon</span>
         </div>
         <p id="invoice-framing" class="invoice-framing">
-          A <strong>Pay Invoice</strong> task has been raised on your Lightning
-          node. Accept it in MyNode, or scan/copy the same invoice below.
+          Scan the QR code or copy the BOLT11 Lightning invoice below to pay
+          from your Lightning wallet (RTL, ThunderHub, Zeus, or Alby).
         </p>
         <div
           id="invoice-switcher"
@@ -373,7 +373,7 @@
           </div>
 
           <!-- Step 3: Emphasized Primary Buy Action -->
-          <div class="setup-cta-row">
+          <div id="onboarding" class="setup-cta-row">
             <button
               type="button"
               id="btn-intent-buy"
@@ -394,9 +394,17 @@
               </svg>
               <span id="buy-cta-label">Buy subscription</span>
             </button>
+            <button
+              type="button"
+              id="btn-setup-import"
+              class="btn-intent btn-intent-secondary"
+              data-open-dialog="import-config-modal"
+            >
+              Import Existing Config
+            </button>
             <p class="cta-note">
-              Creates a Lightning invoice and a
-              <strong>Pay Invoice</strong> task on your node.
+              Creates a BOLT11 Lightning invoice and provisions your WireGuard
+              configuration automatically once paid.
             </p>
           </div>
         </div>
@@ -407,11 +415,10 @@
             <div class="onboarding-copy">
               <strong>1. Request an invoice</strong>
               <span>
-                Use the plan picker above or run
-                <span class="path"
-                  >Services → TunnelSats → Actions → Buy Subscription</span
-                >. Bought on tunnelsats.com? Run
-                <strong>Import Subscription</strong>.
+                Use the plan picker above or open
+                <span class="path">the Actions &amp; Plans tab in this dashboard</span>.
+                Bought on tunnelsats.com? Click
+                <strong>Import Existing Config</strong>.
               </span>
             </div>
           </li>
@@ -420,21 +427,20 @@
             <div class="onboarding-copy">
               <strong>2. Pay with Lightning</strong>
               <span>
-                Accept the <strong>Pay Invoice</strong> task on your node or
-                scan the QR code shown here. Auto-renew is optional via
-                <span class="path"
-                  >Services → TunnelSats → Actions → Connect Wallet</span
-                >.
+                Scan the QR code or copy the BOLT11 invoice shown here.
+                Auto-renew is optional via
+                <span class="path">the Actions &amp; Plans tab in this dashboard</span>.
               </span>
             </div>
           </li>
           <li class="onboarding-step">
             <img src="icons/stack.png" alt="" class="brand-tile-icon" />
             <div class="onboarding-copy">
-              <strong>3. Accept the routing task</strong>
+              <strong>3. Apply the tunnel on MyNode</strong>
               <span>
-                Accept <strong>Clearnet over VPN</strong> on your Lightning
-                node; WireGuard then runs inside the node container.
+                Apply the tunnel in Mode A (1-click) or via SSH in Mode B;
+                <code>tunnelsats.sh --managed mynode</code> isolates
+                <code>lnd.service</code> inside <code>tunnelsats.slice</code>.
               </span>
             </div>
           </li>
@@ -687,9 +693,7 @@
               </button>
               <p id="nwc-budget-note" class="nwc-budget-note">
                 Optional: connect a wallet in
-                <strong
-                  >Services → TunnelSats → Actions → Connect Wallet</strong
-                >
+                <strong>the Actions &amp; Plans tab in this dashboard</strong>
                 to renew automatically within 7 days of expiry.
               </p>
             </div>
@@ -821,11 +825,11 @@
               <span id="manage-heading">Actions &amp; Plans</span>
             </h2>
           </div>
-          <span class="badge-pill">Services → TunnelSats → Actions</span>
+          <span class="badge-pill">MyNode App Controls</span>
         </div>
         <p class="muted">
-          Buy a subscription in another region, or run configuration and backup
-          actions in MyNode.
+          Buy a subscription in another region, manage MyNode host routing, or
+          import, export, and connect NWC auto-renewal.
         </p>
 
         <!-- Secondary Server Switch / New Subscription Composer -->
@@ -892,6 +896,20 @@
           <p id="mynode-mode-desc" class="muted">
             Mode A (Integrated Mode, default) runs <code>reconcile_mynode.sh</code> automatically from the web UI. Mode B (Secure / Manual CLI Mode) disables privileged execution from the web UI and provides copyable SSH commands.
           </p>
+          <dl class="connection-facts mynode-telemetry-facts">
+            <div class="fact">
+              <dt>Execution Mode</dt>
+              <dd id="mynode-val-mode">Mode A: Integrated</dd>
+            </div>
+            <div class="fact">
+              <dt>Managed Dataplane</dt>
+              <dd id="mynode-val-managed">Not Installed</dd>
+            </div>
+            <div class="fact">
+              <dt>LND Extra Config</dt>
+              <dd id="mynode-val-lnd-extra">Tor-Only</dd>
+            </div>
+          </dl>
           <div class="action-controls">
             <button
               type="button"
@@ -922,7 +940,7 @@
             <span class="prop-label">Manual SSH Command (Mode B / Audit)</span>
             <div class="prop-value-group">
               <code id="mynode-manual-cmd" class="prop-value"
-                >sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh status</code
+                >sudo /usr/local/sbin/tunnelsats-reconcile status</code
               >
               <button
                 type="button"
@@ -942,8 +960,8 @@
             <div class="action-item-body">
               <span class="action-name">Buy Subscription</span>
               <span class="action-desc">
-                Pick a server and duration, then pay the Lightning invoice on
-                your node.
+                Pick a server and duration above, then pay the BOLT11 Lightning
+                invoice from your wallet.
               </span>
             </div>
           </li>
@@ -965,6 +983,15 @@
                 Clear this month’s usage counter when you are close to the
                 limit.
               </span>
+              <div class="action-item-cta">
+                <button
+                  type="button"
+                  class="btn-intent btn-intent-secondary btn-action-inline"
+                  data-open-dialog="reset-confirm-modal"
+                >
+                  Reset Bandwidth ($1.00)
+                </button>
+              </div>
             </div>
           </li>
           <li
@@ -972,12 +999,23 @@
             class="action-item action-item-with-icon"
           >
             <img src="NWC_icon.svg" alt="" class="brand-tile-icon-sm" />
-            <div class="action-item-body">
+            <div id="action-nwc-connect" class="action-item-body">
               <span class="action-name">Connect Wallet (NWC Auto-Renew)</span>
               <span class="action-desc">
-                Connect a Nostr Wallet Connect (NWC) URI for automatic renewal
-                within 7 days of expiry (optional Tor SOCKS5 routing).
+                Connect or disconnect a Nostr Wallet Connect (NWC) URI for
+                automatic renewal within 7 days of expiry (optional Tor SOCKS5
+                routing).
               </span>
+              <div id="action-nwc-disconnect" class="action-item-cta">
+                <button
+                  type="button"
+                  id="btn-open-nwc-modal"
+                  class="btn-intent btn-intent-secondary btn-action-inline"
+                  data-open-dialog="nwc-wallet-modal"
+                >
+                  Connect Wallet
+                </button>
+              </div>
             </div>
           </li>
           <li id="action-import" class="action-item action-item-with-icon">
@@ -985,9 +1023,19 @@
             <div class="action-item-body">
               <span class="action-name">Import Subscription</span>
               <span class="action-desc">
-                Paste a WireGuard <code>.conf</code> file bought on
+                Paste or upload a WireGuard <code>.conf</code> file bought on
                 tunnelsats.com.
               </span>
+              <div class="action-item-cta">
+                <button
+                  type="button"
+                  id="btn-open-import-modal"
+                  class="btn-intent btn-intent-secondary btn-action-inline"
+                  data-open-dialog="import-config-modal"
+                >
+                  Import Config
+                </button>
+              </div>
             </div>
           </li>
           <li id="action-configure" class="action-item action-item-with-icon">
@@ -995,8 +1043,8 @@
             <div class="action-item-body">
               <span class="action-name">Configure TunnelSats</span>
               <span class="action-desc">
-                Choose the target node (LND, Core Lightning or Eclair), toggle
-                the service, or allow IPv6 inside the tunnel.
+                Toggle Mode A (Integrated) vs Mode B (Secure CLI) and apply or
+                restore LND routing in the MyNode Reconciler card above.
               </span>
             </div>
           </li>
@@ -1005,9 +1053,19 @@
             <div class="action-item-body">
               <span class="action-name">Export WireGuard Configuration</span>
               <span class="action-desc">
-                Read the stored <code>.conf</code> file inside MyNode for
-                backup (includes your private key).
+                Read or download the stored <code>tunnelsatsv2.conf</code> file
+                on MyNode for backup (includes your private key).
               </span>
+              <div class="action-item-cta">
+                <button
+                  type="button"
+                  id="btn-open-export-modal"
+                  class="btn-intent btn-intent-secondary btn-action-inline"
+                  data-open-export-modal
+                >
+                  Export Config
+                </button>
+              </div>
             </div>
           </li>
         </ul>
@@ -1404,10 +1462,8 @@
               download). Usage resets for free on the 1st of each month.
             </li>
             <li>
-              <strong>Paid reset:</strong> Run
-              <span class="path"
-                >Services → TunnelSats → Actions → Reset Bandwidth</span
-              >
+              <strong>Paid reset:</strong> Open
+              <span class="path">the Actions &amp; Plans tab in this dashboard</span>
               when usage is high.
             </li>
             <li>
@@ -1479,8 +1535,8 @@
             </li>
           </ul>
           <p class="muted">
-            TunnelSats creates the invoice, and a Pay Invoice task is raised on
-            your Lightning node.
+            TunnelSats creates a $1.00 BOLT11 Lightning invoice that you can
+            scan or copy directly from this dashboard.
           </p>
           <div class="modal-actions">
             <button
@@ -1561,13 +1617,13 @@
               <p>
                 Use the interactive Server Region and Duration pills directly on
                 this dashboard, or open
-                <strong>Services → TunnelSats → Actions</strong> in MyNode:
+                <strong>the Actions &amp; Plans tab in this dashboard</strong>:
               </p>
               <ul>
                 <li>
                   <strong>Buy Subscription</strong> creates a WireGuard key on
-                  this server, fetches a Lightning invoice, and raises a
-                  <strong>Pay Invoice</strong> task on your node.
+                  this server, fetches a BOLT11 Lightning invoice, and displays
+                  a scannable QR code.
                 </li>
                 <li>
                   <strong>Renew Subscription</strong> extends the current
@@ -1587,21 +1643,18 @@
             </summary>
             <div class="faq-answer">
               <p>
-                <strong>Yes, via Nostr Wallet Connect (NWC).</strong> Run
-                <strong
-                  >Services → TunnelSats → Actions → Connect Wallet</strong
-                >
-                and paste a <code>nostr+walletconnect://</code> URI (Alby Hub,
-                LNBits, Cashu/Minibits, or self-hosted NWC). When your
-                subscription is within 7 days of expiry, TunnelSats requests a
-                renewal invoice and pays it automatically (with optional Tor
-                SOCKS5 routing).
+                <strong>Yes, via Nostr Wallet Connect (NWC).</strong> Open
+                <strong>the Actions &amp; Plans tab in this dashboard</strong>,
+                click <strong>Connect Wallet</strong>, and paste a
+                <code>nostr+walletconnect://</code> URI (Alby Hub, LNBits,
+                Cashu/Minibits, or self-hosted NWC). When your subscription is
+                within 7 days of expiry, TunnelSats requests a renewal invoice
+                and pays it automatically (with optional Tor SOCKS5 routing).
               </p>
               <p class="faq-note">
                 If the wallet balance or budget is too low, or NWC fails 3
-                times, TunnelSats raises a <strong>Pay Invoice</strong> task on
-                your node and a <strong>Connect Wallet</strong> task so you can
-                renew manually. Without NWC, reminders are posted at
+                times, TunnelSats displays the renewal invoice on this dashboard
+                so you can pay manually. Without NWC, reminders are posted at
                 <strong>7 days</strong> and <strong>3 days</strong> before
                 expiry.
               </p>
@@ -1610,18 +1663,15 @@
 
           <details class="faq-item" name="faq">
             <summary class="faq-question">
-              How do I switch between LND, Core Lightning and Eclair?
+              How do I switch between Mode A (Integrated) and Mode B (Secure CLI)?
             </summary>
             <div class="faq-answer">
               <p>
-                Run
-                <strong
-                  >Services → TunnelSats → Actions → Configure
-                  TunnelSats</strong
-                >
-                and select the new target node. TunnelSats waits for the
-                previous node to turn off its tunnel before raising the task on
-                the new node, so two nodes never share one WireGuard peer.
+                Open
+                <strong>the Actions &amp; Plans tab in this dashboard</strong>
+                and use the <strong>MyNode Execution Mode &amp; Host Reconciler</strong>
+                card to switch between Mode A (1-click sudoers reconciler) and
+                Mode B (Manual SSH CLI mode).
               </p>
             </div>
           </details>
@@ -1634,34 +1684,281 @@
               <p>
                 When a subscription expires, the TunnelSats server disables the
                 WireGuard peer and clearnet peer traffic stops working through
-                TunnelSats. Renew the subscription or turn off
-                <strong>Clearnet over VPN</strong> on the node.
+                TunnelSats. Renew the subscription or click
+                <strong>Restore Tor-Only Mode</strong>.
               </p>
               <p class="faq-note">
-                The kill switch is part of the Lightning node package. Require
-                <strong
-                  >LND 0.21.3-beta:10, Core Lightning 26.6.8:3 or Eclair
-                  0.14.3:3</strong
-                >
-                or newer so the kill-switch rule stays armed if
-                <code>wg0</code> goes down.
+                The independent <code>tunnelsats-killswitch.service</code>
+                (<code>inet tunnelsats</code> nftables table) remains armed even
+                if <code>wg-quick@tunnelsatsv2.service</code> stops, preventing
+                clearnet IP leaks from <code>tunnelsats.slice</code>.
               </p>
             </div>
           </details>
 
           <details class="faq-item" name="faq">
             <summary class="faq-question">
-              Why can I not paste my WireGuard config into this page?
+              How are WireGuard keys and configurations protected on MyNode?
             </summary>
             <div class="faq-answer">
               <p>
-                A WireGuard configuration contains your private key. MyNode
-                service web interfaces are reachable on the local network
-                without a login, so private keys and configuration writes are
-                handled only inside authenticated MyNode Actions.
+                WireGuard private keys are generated locally on your MyNode
+                device and stored with <code>0600</code> permissions in
+                <code>/mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf</code>.
+                Import and export endpoints require same-origin CSRF tokens over
+                <code>POST</code> and are never exposed on read-only
+                <code>GET</code> endpoints.
               </p>
             </div>
           </details>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- -- Import WireGuard Configuration Modal -- -->
+    <dialog
+      id="import-config-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="import-config-title"
+    >
+      <div class="modal-dialog-inner">
+        <div class="modal-header">
+          <h2 id="import-config-title">Import WireGuard Configuration</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="muted">
+            Paste your TunnelSats WireGuard <code>.conf</code> file below or
+            select a file from your computer.
+          </p>
+          <label class="intent-field">
+            <span class="intent-field-label">Load from .conf file</span>
+            <input
+              type="file"
+              id="import-config-file"
+              class="modal-file-input"
+              accept=".conf,.txt"
+            />
+          </label>
+          <label class="intent-field">
+            <span class="intent-field-label">WireGuard Configuration (tunnelsatsv2.conf)</span>
+            <textarea
+              id="import-config-textarea"
+              class="modal-textarea"
+              rows="9"
+              spellcheck="false"
+              placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ...&#10;# Server: ...&#10;# Port Forwarding: ...&#10;&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = ..."
+            ></textarea>
+          </label>
+          <label class="modal-checkbox-row">
+            <input type="checkbox" id="import-apply-now" checked />
+            <span>Apply tunnel on MyNode immediately (Mode A)</span>
+          </label>
+          <p id="import-config-feedback" class="reach-result" role="status" hidden></p>
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="btn-intent btn-intent-secondary"
+              data-close-dialog
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              id="btn-submit-import"
+              class="btn-intent"
+              data-submit-import
+            >
+              Import Configuration
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- -- Export WireGuard Configuration Modal -- -->
+    <dialog
+      id="export-config-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="export-config-title"
+    >
+      <div class="modal-dialog-inner">
+        <div class="modal-header">
+          <h2 id="export-config-title">Export WireGuard Configuration</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="muted">
+            Backup of your active <code>tunnelsatsv2.conf</code> (contains your
+            WireGuard private key; store securely).
+          </p>
+          <label class="intent-field">
+            <span class="intent-field-label">Active WireGuard Configuration</span>
+            <textarea
+              id="export-config-textarea"
+              class="modal-textarea"
+              rows="9"
+              readonly
+              spellcheck="false"
+            ></textarea>
+          </label>
+          <p id="export-config-feedback" class="reach-result" role="status" hidden></p>
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="btn-intent btn-intent-secondary"
+              data-close-dialog
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              id="btn-copy-export-config"
+              class="btn-intent btn-intent-secondary"
+              data-copy-export
+            >
+              Copy Configuration
+            </button>
+            <button
+              type="button"
+              id="btn-download-export-config"
+              class="btn-intent"
+              data-download-export
+            >
+              Download tunnelsatsv2.conf
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- -- Connect / Disconnect NWC Wallet Modal -- -->
+    <dialog
+      id="nwc-wallet-modal"
+      class="app-modal"
+      closedby="any"
+      aria-labelledby="nwc-wallet-title"
+    >
+      <div class="modal-dialog-inner">
+        <div class="modal-header">
+          <h2 id="nwc-wallet-title">Nostr Wallet Connect (NWC) Auto-Renewal</h2>
+          <button
+            type="button"
+            class="modal-close-btn"
+            data-close-dialog
+            aria-label="Close"
+          >
+            <svg
+              class="modal-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="muted">
+            Connect a <code>nostr+walletconnect://</code> URI to renew your
+            subscription automatically within 7 days of expiry.
+          </p>
+          <label class="intent-field">
+            <span class="intent-field-label">NWC Connection URI</span>
+            <input
+              type="password"
+              id="nwc-uri-input"
+              class="reach-input"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="nostr+walletconnect://..."
+            />
+          </label>
+          <label class="intent-field">
+            <span class="intent-field-label">Auto-Renewal Duration</span>
+            <select id="nwc-duration-select" class="intent-select">
+              <option value="match" selected>Match previous plan duration</option>
+              <option value="1m">1 Month ($3.00)</option>
+              <option value="3m">3 Months ($8.55)</option>
+              <option value="6m">6 Months ($16.20)</option>
+              <option value="12m">12 Months ($28.80)</option>
+            </select>
+          </label>
+          <label class="modal-checkbox-row">
+            <input type="checkbox" id="nwc-route-tor" />
+            <span>Route NWC relay traffic via Tor (SOCKS5h 127.0.0.1:9050)</span>
+          </label>
+          <p id="nwc-modal-feedback" class="reach-result" role="status" hidden></p>
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="btn-intent btn-intent-secondary"
+              data-close-dialog
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              id="btn-submit-nwc-disconnect"
+              class="btn-intent btn-intent-secondary"
+              data-submit-nwc-disconnect
+            >
+              Disconnect Wallet
+            </button>
+            <button
+              type="button"
+              id="btn-submit-nwc-connect"
+              class="btn-intent"
+              data-submit-nwc-connect
+            >
+              Connect Wallet
+            </button>
+          </div>
         </div>
       </div>
     </dialog>

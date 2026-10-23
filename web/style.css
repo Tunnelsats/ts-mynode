@@ -2875,6 +2875,69 @@ meter.gauge:-moz-meter-sub-sub-optimum::-moz-meter-bar {
   font-size: var(--fs-xs);
 }
 
+.mynode-telemetry-facts {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.action-item-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+.btn-action-inline {
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  font-size: var(--fs-xs);
+}
+
+.modal-textarea {
+  width: 100%;
+  min-height: 10rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.modal-textarea:focus-visible {
+  border-color: var(--brand);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.modal-file-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.modal-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.modal-checkbox-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--brand);
+}
+
 /* Small screens: dialogs become bottom sheets. */
 @media (max-width: 640px) {
   .app-modal {

@@ -29,7 +29,7 @@ fi
 SECURE_MODE_ACTIVE="false"
 if [ "${SECURE_MODE:-false}" = "true" ] || [ "${SECURE_MODE:-0}" = "1" ]; then
     SECURE_MODE_ACTIVE="true"
-elif [ -f "$APP_CONFIG" ] && grep -Eq '"secure_mode"[[:space:]]*:[[:space:]]*true|"secureMode"[[:space:]]*:[[:space:]]*true' "$APP_CONFIG" 2>/dev/null; then
+elif [ -f "$APP_CONFIG" ] && grep -Eq '"(secure_mode|secureMode|secure-mode)"[[:space:]]*:[[:space:]]*true' "$APP_CONFIG" 2>/dev/null; then
     SECURE_MODE_ACTIVE="true"
 fi
 
@@ -38,6 +38,7 @@ if [ "$SECURE_MODE_ACTIVE" = "true" ]; then
 else
     cat <<'EOF' > "${SUDOERS_FILE}.tmp"
 Defaults:tunnelsats !requiretty
+Defaults:tunnelsats env_keep += "SECURE_MODE MYNODE_LND_EXTRA_CONF TUNNELSATS_SH TUNNELSATS_DATA_DIR TUNNELSATS_LN_IMPL VPN_EXTERNAL_HOST VPN_PORT"
 tunnelsats ALL=(root) NOPASSWD: /usr/local/sbin/tunnelsats-reconcile *
 EOF
     chown root:root "${SUDOERS_FILE}.tmp"
