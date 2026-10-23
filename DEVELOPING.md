@@ -6,9 +6,9 @@ This guide covers the repository layout, local testing, version management, and 
 
 | Path | Purpose |
 | :--- | :--- |
-| `bridge.py` | Unprivileged Python HTTP controller (`127.0.0.1:18739`), v1 API client, settlement engine, and NIP-47 NWC auto-renewer. |
+| `bridge.py` | Unprivileged Python HTTP controller (`127.0.0.1:18739`), canonical `/api/status` (and `/api/health` alias) telemetry endpoint, v1 API client, settlement engine, and NIP-47 NWC auto-renewer. |
 | `web/` | Static frontend dashboard (Server picker, BOLT11 checkout, NWC settings, Dual-Mode toggle, Verify/CLI guide). |
-| `scripts/reconcile_mynode.sh` | Root reconciler managing `/mnt/hdd/mynode/settings/lnd_extra_config.conf` and `tunnelsats.sh --managed mynode`. |
+| `scripts/reconcile_mynode.sh` | Root reconciler managing `/mnt/hdd/mynode/settings/lnd_extra_config.conf` and `tunnelsats.sh install --managed mynode --impl "${TUNNELSATS_LN_IMPL:-lnd}"`. |
 | `scripts/tunnelsats.sh` | Bundled TunnelSats Managed Dataplane engine supporting the `mynode` profile (`lnd.service` inside `tunnelsats.slice`). |
 | `scripts/check_mynode_app.py` | Standalone linter enforcing all `mynodebtc/mynode` `app_sdk/create.py check tunnelsats` rules. |
 | `scripts/bump_version.py` | Transactional version bumper keeping `version.json`, `mynode_app/tunnelsats/tunnelsats.json`, `bridge.py`, and `CHANGELOG.md` synchronized. |
@@ -58,6 +58,24 @@ python3 scripts/bump_version.py 0.2.0 --notes "Add new feature or fix"
 - Ensures zero `FILL_IN` placeholders exist anywhere under `mynode_app/tunnelsats/`.
 - Verifies `nginx/https_tunnelsats.conf` listens only on `8739` and `8740` and proxies strictly to `http://127.0.0.1:18739`.
 - Verifies `tunnelsats.service` binds strictly to `127.0.0.1:18739`.
+
+---
+
+## Live myNode VM Sideloading, Health Verification & Removal
+
+To sideload and test `ts-mynode` on a live myNode BTC VM or device:
+
+```bash
+# 1. Sideload and install TunnelSats onto the myNode VM over SSH:
+./scripts/deploy_mynode.sh <MYNODE_IP> admin
+
+# 2. Query the canonical health and operational telemetry endpoint (/api/status or /api/health):
+curl -s http://127.0.0.1:18739/api/status | jq .
+curl -s http://127.0.0.1:18739/api/health | jq .
+
+# 3. Cleanly uninstall TunnelSats and restore Tor-only LND settings on the myNode VM:
+sudo mynode-manage-apps uninstall tunnelsats
+```
 
 ---
 

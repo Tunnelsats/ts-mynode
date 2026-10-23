@@ -141,7 +141,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *'"status":"applied"'* ]]
   grep -q "^externalhosts=eu1.tunnelsats.com:34567$" "${LND_EXTRA_CONFIG}"
-  grep -q "install --managed mynode --non-interactive --yes --config" "${TEST_TMPDIR}/ts_calls.log"
+  grep -q "install --managed mynode --impl lnd --non-interactive --yes --config" "${TEST_TMPDIR}/ts_calls.log"
 
   run "${RECONCILER}" restore
   [ "$status" -eq 0 ]

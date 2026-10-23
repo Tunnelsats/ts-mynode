@@ -2084,7 +2084,7 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
                 self._send_json_head(200, result)
             return
 
-        if path_only == "/api/status":
+        if path_only in ("/api/status", "/api/health"):
             try:
                 status_payload = get_status()
             except Exception as e:
@@ -2670,6 +2670,8 @@ def run_mynode_reconciler(action="apply"):
     env["MYNODE_LND_EXTRA_CONF"] = LND_EXTRA_CONFIG_PATH
     env["TUNNELSATS_SH"] = TUNNELSATS_SH_PATH
     env["TUNNELSATS_DATA_DIR"] = DATA_DIR
+    target_impl = get_target_node()
+    env["TUNNELSATS_LN_IMPL"] = target_impl if target_impl in ("lnd", "cln") else "lnd"
 
     cmd = [RECONCILER_SCRIPT_PATH, action]
     if action == "apply":

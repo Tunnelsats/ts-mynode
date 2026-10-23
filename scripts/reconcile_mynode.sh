@@ -16,6 +16,7 @@ MYNODE_GEN_LND_CONFIG="${MYNODE_GEN_LND_CONFIG:-/usr/bin/mynode_gen_lnd_config.s
 WG_DIR="${WG_DIR:-/etc/wireguard}"
 WG_CONF_DST="${WG_CONF_DST:-${WG_DIR}/tunnelsatsv2.conf}"
 MANAGED_INVENTORY="${MANAGED_INVENTORY:-/etc/tunnelsats/managed.json}"
+TUNNELSATS_LN_IMPL="${TUNNELSATS_LN_IMPL:-lnd}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 SUDOERS_FILE="${SUDOERS_FILE:-/etc/sudoers.d/tunnelsats-reconcile}"
 RECONCILE_SBIN="${RECONCILE_SBIN:-/usr/local/sbin/tunnelsats-reconcile}"
@@ -332,7 +333,7 @@ cmd_apply() {
         "$SYSTEMCTL_BIN" restart wg-quick@tunnelsatsv2.service
         "$SYSTEMCTL_BIN" restart lnd.service
     else
-        if ! "$ts_bin" install --managed mynode --non-interactive --yes --config "$conf_path"; then
+        if ! "$ts_bin" install --managed mynode --impl "${TUNNELSATS_LN_IMPL:-lnd}" --non-interactive --yes --config "$conf_path"; then
             block_remove || true
             if [ -x "$MYNODE_GEN_LND_CONFIG" ]; then
                 "$MYNODE_GEN_LND_CONFIG" || true
