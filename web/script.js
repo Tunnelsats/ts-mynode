@@ -727,11 +727,10 @@ function buildNotices(m) {
           : 'Payment received; TunnelSats is provisioning the tunnel and will save the configuration automatically.',
       })
     } else {
-      const node = nodeLabel(pending.order.targetNode)
       notices.push({
         level: 'info',
         title: 'Payment pending',
-        text: `If you have not paid yet, accept the Pay Invoice task on ${node}. Once paid, TunnelSats sets up the tunnel automatically.${retryText(pending.order)}`,
+        text: `Scan the QR code or copy the BOLT11 Lightning invoice below to pay from your Lightning wallet (RTL, ThunderHub, Zeus, or Alby). Once paid, TunnelSats sets up the tunnel automatically.${retryText(pending.order)}`,
       })
     }
   }
@@ -745,11 +744,10 @@ function buildNotices(m) {
           : 'Payment received; waiting for TunnelSats to confirm the extended expiry.',
       })
     } else {
-      const node = nodeLabel(pending.renewal.targetNode)
       notices.push({
         level: 'info',
         title: 'Renewal payment pending',
-        text: `If you have not paid yet, accept the Pay Invoice task on ${node}. Once paid, the new expiry is confirmed automatically.${retryText(pending.renewal)}`,
+        text: `Scan the QR code or copy the BOLT11 Lightning invoice below to pay from your Lightning wallet (RTL, ThunderHub, Zeus, or Alby). Once paid, the new expiry is confirmed automatically.${retryText(pending.renewal)}`,
       })
     }
   }
@@ -768,12 +766,11 @@ function buildNotices(m) {
           : 'Payment received; waiting for TunnelSats to apply the bandwidth reset.',
       })
     } else {
-      const node = nodeLabel(pending.reset.targetNode)
       const expires = formatTime(pending.reset.expiresAt)
       notices.push({
         level: 'info',
         title: 'Bandwidth reset payment pending',
-        text: `If you have not paid yet, accept the Pay Invoice task on ${node}; once paid, the reset is applied automatically.${expires ? ` The invoice expires ${expires}.` : ''}${retryText(pending.reset)}`,
+        text: `Scan the QR code or copy the BOLT11 Lightning invoice below to pay from your Lightning wallet; once paid, the reset is applied automatically.${expires ? ` The invoice expires ${expires}.` : ''}${retryText(pending.reset)}`,
       })
     }
   }
@@ -867,19 +864,19 @@ function buildNotices(m) {
       notices.push({
         level: 'warning',
         title: 'NWC wallet reconnect needed',
-        text: 'NWC wallet credentials are not included in MyNode backups. Run Services → TunnelSats → Actions → Connect Wallet to re-enter your NWC URI.',
+        text: 'NWC wallet credentials are not included in MyNode backups. Open the Actions & Plans tab in this dashboard to re-enter your NWC URI.',
       })
     } else if (m.nwc.budgetWarning) {
       notices.push({
         level: 'warning',
         title: 'NWC auto-renewal budget exceeded',
-        text: 'Your NWC wallet budget or balance was below the renewal invoice. Accept the Pay Invoice task on your node or increase your NWC budget in Connect Wallet.',
+        text: 'Your NWC wallet budget or balance was below the renewal invoice. Pay the invoice shown on this dashboard or increase your NWC budget in Connect Wallet.',
       })
     } else if (m.nwc.fallbackTaskRaised) {
       notices.push({
         level: 'warning',
         title: 'NWC auto-renewal fell back to manual payment',
-        text: 'Automatic renewal via NWC could not complete. Accept the Pay Invoice task on your node or check Connect Wallet.',
+        text: 'Automatic renewal via NWC could not complete. Pay the invoice shown on this dashboard or check Connect Wallet.',
       })
     }
   }
@@ -901,7 +898,7 @@ function nwcStatusView(m) {
     return {
       cls: 'neutral',
       badge: 'Off',
-      note: 'Optional: connect a wallet in Services → TunnelSats → Actions → Connect Wallet to renew automatically.',
+      note: 'Optional: connect a wallet in the Actions & Plans tab in this dashboard to renew automatically.',
     }
   }
   const rec =
@@ -916,21 +913,21 @@ function nwcStatusView(m) {
     return {
       cls: 'alert',
       badge: 'Reconnect needed',
-      note: 'Wallet credentials are not part of backups. Re-enter the NWC URI in Services → TunnelSats → Actions → Connect Wallet.',
+      note: 'Wallet credentials are not part of backups. Re-enter the NWC URI in the Actions & Plans tab in this dashboard.',
     }
   }
   if (nwc.budgetWarning) {
     return {
       cls: 'alert',
       badge: 'Budget too low',
-      note: `${nwc.lastError ? `${nwc.lastError} ` : ''}Raise the wallet budget to at least ${rec} per renewal, or accept the Pay Invoice task.`,
+      note: `${nwc.lastError ? `${nwc.lastError} ` : ''}Raise the wallet budget to at least ${rec} per renewal, or pay the invoice shown on this dashboard.`,
     }
   }
   if (nwc.fallbackTaskRaised) {
     return {
       cls: 'alert',
       badge: 'Manual fallback',
-      note: `${nwc.lastError ? `${nwc.lastError} ` : ''}Accept the Pay Invoice task on your node, or check Connect Wallet.`,
+      note: `${nwc.lastError ? `${nwc.lastError} ` : ''}Pay the invoice shown on this dashboard, or check Connect Wallet.`,
     }
   }
   const relay = nwc.relayHost || 'connected'
@@ -1319,15 +1316,15 @@ function flowSteps(m) {
     )
     const entry = pending[def.pendingKey]
     if (!entry && !intentActive) continue
-    const node = nodeLabel((entry && entry.targetNode) || m.targetNode)
     let current
     let detail
     if (!entry) {
       current = 1
-      detail = `Requesting the invoice from TunnelSats and raising the Pay Invoice task on ${node}…`
+      detail = 'Requesting the Lightning invoice from TunnelSats…'
     } else if (!isPaymentReceived(entry)) {
       current = 2
-      detail = `Accept the Pay Invoice task on ${node}, or pay the same invoice shown here.`
+      detail =
+        'Scan the QR code or copy the BOLT11 Lightning invoice shown here.'
     } else {
       current = 3
       detail = def.working
@@ -1660,12 +1657,11 @@ function renderInvoicePanel(m) {
   }
 
   const entry = active.entry
-  const nodeName = nodeLabel(entry.targetNode || (m && m.targetNode))
   panel.hidden = false
   setText('invoice-title', active.title)
   setText(
     'invoice-framing',
-    `A Pay Invoice task has been raised on ${nodeName}. Accept it in MyNode, or scan/copy the same invoice below.${all.length > 1 ? ` ${all.length} invoices are waiting for payment.` : ''}`,
+    `Scan the QR code or copy the BOLT11 Lightning invoice below to pay from your Lightning wallet (RTL, ThunderHub, Zeus, or Alby).${all.length > 1 ? ` ${all.length} invoices are waiting for payment.` : ''}`,
   )
   setText('invoice-amount', formatSats(entry.amountSats))
   const expiresFormatted = formatTime(entry.expiresAt)
@@ -1685,9 +1681,9 @@ function renderInvoicePanel(m) {
       qrBox.setAttribute('aria-label', 'Lightning invoice QR code')
     } else {
       // Longer than a QR code can hold (version 40, level L): say so rather
-      // than leave an empty box; the Pay Invoice task and Copy still work.
+      // than leave an empty box; Copy still works.
       const text =
-        'This invoice is too long for a QR code. Accept the Pay Invoice task or copy the invoice instead.'
+        'This invoice is too long for a QR code. Copy the BOLT11 invoice below instead.'
       const note = document.createElement('p')
       note.className = 'invoice-qr-fallback'
       note.textContent = text
@@ -1707,13 +1703,12 @@ function selectInvoice(kind) {
 
 function activeIntentMessage(m) {
   const intents = (m && m.intents) || {}
-  const target = nodeLabel(m && m.targetNode)
   for (const kind of ['buy', 'renew', 'reset']) {
     const slot = intents[kind]
     if (slot && (slot.status === 'pending' || slot.status === 'processing')) {
       return {
         level: 'info',
-        text: `Requesting Lightning invoice from TunnelSats and raising the Pay Invoice task on ${target}…`,
+        text: 'Requesting Lightning invoice from TunnelSats…',
       }
     }
   }
@@ -2497,9 +2492,18 @@ function render() {
 function renderMynodeControls(m) {
   const mn = (m && m.mynode) || {}
   const secure = Boolean(mn.secureMode)
+  const modeText = secure ? 'Mode B: Secure CLI' : 'Mode A: Integrated'
+  setText('mynode-mode-badge', modeText)
+  setText('mynode-val-mode', modeText)
   setText(
-    'mynode-mode-badge',
-    secure ? 'Mode B: Secure CLI' : 'Mode A: Integrated',
+    'mynode-val-managed',
+    mn.managedInstalled
+      ? `Installed (${mn.managedUnit || 'lnd.service'})`
+      : 'Not Installed',
+  )
+  setText(
+    'mynode-val-lnd-extra',
+    mn.lndExtraConfigured ? 'Configured (# BEGIN TUNNELSATS)' : 'Tor-Only',
   )
   const toggleBtn = byId('btn-mynode-toggle-mode')
   if (toggleBtn) {
@@ -2511,8 +2515,271 @@ function renderMynodeControls(m) {
   if (applyBtn) applyBtn.disabled = secure || !Boolean(m && m.configured)
   const restoreBtn = byId('btn-mynode-restore')
   if (restoreBtn) restoreBtn.disabled = secure
+  const importApplyCheckbox = byId('import-apply-now')
+  if (importApplyCheckbox) {
+    importApplyCheckbox.disabled = secure
+    if (secure) importApplyCheckbox.checked = false
+  }
+  const openNwcBtn = byId('btn-open-nwc-modal')
+  if (openNwcBtn) {
+    openNwcBtn.textContent =
+      m && m.nwc && m.nwc.connected
+        ? 'Manage / Disconnect Wallet'
+        : 'Connect Wallet'
+  }
   if (mn.manualApplyCommand) {
     setTitled('mynode-manual-cmd', mn.manualApplyCommand)
+  }
+}
+
+function showModalFeedback(id, text, level = 'info') {
+  const el = byId(id)
+  if (!el) return
+  if (!text) {
+    el.hidden = true
+    el.textContent = ''
+    el.classList.remove('is-error', 'is-success')
+    return
+  }
+  el.hidden = false
+  el.textContent = text
+  el.classList.toggle('is-error', level === 'error')
+  el.classList.toggle('is-success', level === 'success')
+}
+
+async function submitImportConfig() {
+  const area = byId('import-config-textarea')
+  const applyCheckbox = byId('import-apply-now')
+  const rawConfig = area ? String(area.value || '').trim() : ''
+  if (!rawConfig) {
+    showModalFeedback(
+      'import-config-feedback',
+      'Paste or select a WireGuard .conf file first.',
+      'error',
+    )
+    return
+  }
+  showModalFeedback(
+    'import-config-feedback',
+    'Importing WireGuard configuration…',
+    'info',
+  )
+  try {
+    const response = await fetch('/api/config/import', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken(),
+      },
+      body: JSON.stringify({
+        config: rawConfig,
+        applyNow: Boolean(
+          applyCheckbox && applyCheckbox.checked && !applyCheckbox.disabled,
+        ),
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      showModalFeedback(
+        'import-config-feedback',
+        data.error || `Import failed (HTTP ${response.status})`,
+        'error',
+      )
+      return
+    }
+    showModalFeedback('import-config-feedback', '', 'info')
+    const dialog = byId('import-config-modal')
+    if (dialog && dialog.open) dialog.close()
+    localIntentFeedback = {
+      level: 'success',
+      text:
+        data.reconcile && data.reconcile.status === 'ok'
+          ? 'WireGuard configuration imported and applied on MyNode.'
+          : 'WireGuard configuration imported.',
+    }
+    await refresh()
+  } catch (err) {
+    showModalFeedback(
+      'import-config-feedback',
+      'Could not reach the TunnelSats service to import configuration.',
+      'error',
+    )
+  }
+}
+
+async function openExportConfigModal() {
+  const dialog = byId('export-config-modal')
+  const area = byId('export-config-textarea')
+  if (area) area.value = ''
+  showModalFeedback(
+    'export-config-feedback',
+    'Loading stored configuration…',
+    'info',
+  )
+  if (dialog && !dialog.open) dialog.showModal()
+  try {
+    const response = await fetch('/api/config/export', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken(),
+      },
+      body: JSON.stringify({}),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      showModalFeedback(
+        'export-config-feedback',
+        data.error || `Could not export configuration (HTTP ${response.status})`,
+        'error',
+      )
+      return
+    }
+    showModalFeedback('export-config-feedback', '', 'info')
+    if (area) area.value = data.config || ''
+  } catch (err) {
+    showModalFeedback(
+      'export-config-feedback',
+      'Could not reach the TunnelSats service to export configuration.',
+      'error',
+    )
+  }
+}
+
+function copyExportConfig(button) {
+  const area = byId('export-config-textarea')
+  const text = area ? String(area.value || '').trim() : ''
+  if (!text) return
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).catch(() => {})
+  } else if (area) {
+    area.select()
+    try {
+      document.execCommand('copy')
+    } catch {
+      // ignore
+    }
+  }
+  if (button) {
+    const orig = button.textContent
+    button.textContent = 'Copied'
+    setTimeout(() => {
+      button.textContent = orig
+    }, 1500)
+  }
+}
+
+function downloadExportConfig() {
+  const area = byId('export-config-textarea')
+  const text = area ? String(area.value || '').trim() : ''
+  if (!text) return
+  const blob = new Blob([`${text}\n`], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'tunnelsatsv2.conf'
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+async function submitNwcConnect() {
+  const uriInput = byId('nwc-uri-input')
+  const durSelect = byId('nwc-duration-select')
+  const torCheckbox = byId('nwc-route-tor')
+  const uri = uriInput ? String(uriInput.value || '').trim() : ''
+  if (!uri) {
+    showModalFeedback(
+      'nwc-modal-feedback',
+      'Paste a nostr+walletconnect:// URI first.',
+      'error',
+    )
+    return
+  }
+  showModalFeedback('nwc-modal-feedback', 'Connecting NWC wallet…', 'info')
+  try {
+    const response = await fetch('/api/nwc/connect', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken(),
+      },
+      body: JSON.stringify({
+        uri,
+        autoRenewDuration: (durSelect && durSelect.value) || 'match',
+        routeViaTor: Boolean(torCheckbox && torCheckbox.checked),
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      showModalFeedback(
+        'nwc-modal-feedback',
+        data.error || `Could not connect wallet (HTTP ${response.status})`,
+        'error',
+      )
+      return
+    }
+    if (uriInput) uriInput.value = ''
+    showModalFeedback('nwc-modal-feedback', '', 'info')
+    const dialog = byId('nwc-wallet-modal')
+    if (dialog && dialog.open) dialog.close()
+    localIntentFeedback = {
+      level: 'success',
+      text: 'NWC wallet connected for automatic subscription renewal.',
+    }
+    await refresh()
+  } catch (err) {
+    showModalFeedback(
+      'nwc-modal-feedback',
+      'Could not reach the TunnelSats service to connect NWC wallet.',
+      'error',
+    )
+  }
+}
+
+async function submitNwcDisconnect() {
+  showModalFeedback('nwc-modal-feedback', 'Disconnecting NWC wallet…', 'info')
+  try {
+    const response = await fetch('/api/nwc/disconnect', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': getCsrfToken(),
+      },
+      body: JSON.stringify({}),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      showModalFeedback(
+        'nwc-modal-feedback',
+        data.error || `Could not disconnect wallet (HTTP ${response.status})`,
+        'error',
+      )
+      return
+    }
+    showModalFeedback('nwc-modal-feedback', '', 'info')
+    const dialog = byId('nwc-wallet-modal')
+    if (dialog && dialog.open) dialog.close()
+    localIntentFeedback = {
+      level: 'info',
+      text: 'NWC wallet disconnected.',
+    }
+    await refresh()
+  } catch (err) {
+    showModalFeedback(
+      'nwc-modal-feedback',
+      'Could not reach the TunnelSats service to disconnect NWC wallet.',
+      'error',
+    )
   }
 }
 
@@ -2824,7 +3091,7 @@ async function submitIntent(actionKey) {
     }
     localIntentFeedback = {
       level: 'info',
-      text: 'Request accepted; preparing the invoice and raising the Pay Invoice task…',
+      text: 'Request accepted; preparing the BOLT11 Lightning invoice…',
     }
   } catch (error) {
     console.error('Intent submission failed:', error)
@@ -2931,6 +3198,31 @@ function bindEvents() {
       triggerMynodeReconcile(reconcileBtn.getAttribute('data-mynode-reconcile'))
       return
     }
+    if (target.closest('[data-submit-import]')) {
+      submitImportConfig()
+      return
+    }
+    if (target.closest('[data-open-export-modal]')) {
+      openExportConfigModal()
+      return
+    }
+    const copyExportBtn = target.closest('[data-copy-export]')
+    if (copyExportBtn) {
+      copyExportConfig(copyExportBtn)
+      return
+    }
+    if (target.closest('[data-download-export]')) {
+      downloadExportConfig()
+      return
+    }
+    if (target.closest('[data-submit-nwc-connect]')) {
+      submitNwcConnect()
+      return
+    }
+    if (target.closest('[data-submit-nwc-disconnect]')) {
+      submitNwcDisconnect()
+      return
+    }
     const invoiceSwitch = target.closest('[data-invoice-kind]')
     if (invoiceSwitch) {
       selectInvoice(invoiceSwitch.getAttribute('data-invoice-kind'))
@@ -2968,6 +3260,18 @@ function bindEvents() {
       selectBuyDuration(target.value)
     } else if (target.id === 'renew-duration-select') {
       selectRenewDuration(target.value)
+    } else if (target.id === 'import-config-file') {
+      const file = target.files && target.files[0]
+      if (file && typeof FileReader === 'function') {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const area = byId('import-config-textarea')
+          if (area && typeof reader.result === 'string') {
+            area.value = reader.result
+          }
+        }
+        reader.readAsText(file)
+      }
     }
   })
 

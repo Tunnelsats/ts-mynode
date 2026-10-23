@@ -2266,6 +2266,10 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
             status_code, response_body = import_wireguard_config(payload)
             self._send_json(status_code, response_body)
             return
+        if path_only == "/api/config/export":
+            status_code, response_body = export_wireguard_config()
+            self._send_json(status_code, response_body)
+            return
         if path_only == "/api/nwc/connect":
             payload = self._read_json_body(4096)
             if payload is None:
@@ -2560,8 +2564,10 @@ def is_secure_mode():
     if env_val in ("0", "false", "no"):
         return False
     cfg = _read_json_object(APP_CONFIG_PATH)
-    if isinstance(cfg, dict) and isinstance(cfg.get("secure-mode"), bool):
-        return cfg["secure-mode"]
+    if isinstance(cfg, dict):
+        for key in ("secure-mode", "secureMode", "secure_mode"):
+            if isinstance(cfg.get(key), bool):
+                return cfg[key]
     meta = read_meta()
     if isinstance(meta.get("secureMode"), bool):
         return meta["secureMode"]
@@ -2574,6 +2580,7 @@ def set_secure_mode(enabled):
     with meta_lock():
         cfg = _read_json_object(APP_CONFIG_PATH) or {}
         cfg["secure-mode"] = enabled_bool
+        cfg["secureMode"] = enabled_bool
         atomic_write_json(APP_CONFIG_PATH, cfg)
         meta = read_meta()
         meta["secureMode"] = enabled_bool
@@ -2584,32 +2591,14 @@ def set_secure_mode(enabled):
 def get_manual_cli_command(action="apply", vpn_host=None, vpn_port=None):
     """Returns the copyable SSH CLI command for Mode B (Secure / Manual CLI Mode)."""
     if action == "restore":
-        return "sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh restore"
+        return "sudo /usr/local/sbin/tunnelsats-reconcile restore"
     if action == "status":
-        return "sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh status"
-    if not vpn_host or not vpn_port:
-        if os.path.exists(CONFIG_PATH):
-            try:
-                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                    content = f.read()
-                if not vpn_host:
-                    host = extract_server_host(content)
-                    if host and host != "Unknown":
-                        vpn_host = host
-                if not vpn_port:
-                    vpn_port = extract_vpn_port(content)
-            except OSError:
-                pass
-    host_str = vpn_host or "<vpn-server-host>"
-    port_str = vpn_port or DEFAULT_VPN_PORT
-    return (
-        f"sudo VPN_EXTERNAL_HOST={host_str} VPN_PORT={port_str} "
-        f"/opt/mynode/tunnelsats/scripts/reconcile_mynode.sh apply {CONFIG_PATH}"
-    )
+        return "sudo /usr/local/sbin/tunnelsats-reconcile status"
+    return f"sudo /usr/local/sbin/tunnelsats-reconcile apply {CONFIG_PATH}"
 
 
 def get_mynode_reconciler_status():
-    """Returns MyNode dual-mode and lnd_extra_config.conf reconciliation state."""
+    """Returns MyNode dual-mode, managed.json inventory, and lnd_extra_config.conf reconciliation state."""
     secure = is_secure_mode()
     block_present = False
     external_host = None
@@ -2641,12 +2630,22 @@ def get_mynode_reconciler_status():
             vpn_port = extract_vpn_port(conf_content)
         except OSError:
             pass
+    inv_path = os.getenv("MANAGED_INVENTORY", "/etc/tunnelsats/managed.json")
+    inv = _read_json_object(inv_path) if os.path.exists(inv_path) else None
+    managed_installed = bool(isinstance(inv, dict) and inv.get("state") == "installed")
+    managed_profile = inv.get("profile") if isinstance(inv, dict) and isinstance(inv.get("profile"), str) else None
+    managed_impl = inv.get("impl") if isinstance(inv, dict) and isinstance(inv.get("impl"), str) else None
+    managed_unit = inv.get("unit") if isinstance(inv, dict) and isinstance(inv.get("unit"), str) else None
     return {
         "secureMode": secure,
         "mode": "secure" if secure else "integrated",
         "lndExtraConfigPath": LND_EXTRA_CONFIG_PATH,
         "lndExtraConfigured": block_present,
         "externalHost": external_host,
+        "managedInstalled": managed_installed,
+        "managedProfile": managed_profile,
+        "managedImpl": managed_impl,
+        "managedUnit": managed_unit,
         "manualApplyCommand": get_manual_cli_command("apply", server_host, vpn_port),
         "manualRestoreCommand": get_manual_cli_command("restore"),
         "manualStatusCommand": get_manual_cli_command("status"),
@@ -2673,7 +2672,15 @@ def run_mynode_reconciler(action="apply"):
     target_impl = get_target_node()
     env["TUNNELSATS_LN_IMPL"] = target_impl if target_impl in ("lnd", "cln") else "lnd"
 
-    cmd = [RECONCILER_SCRIPT_PATH, action]
+    if (
+        os.geteuid() != 0
+        and os.getenv("TUNNELSATS_RECONCILER_PATH") is None
+        and os.path.exists("/usr/local/sbin/tunnelsats-reconcile")
+    ):
+        cmd = ["sudo", "-n", "/usr/local/sbin/tunnelsats-reconcile", action]
+    else:
+        cmd = [RECONCILER_SCRIPT_PATH, action]
+
     if action == "apply":
         if not os.path.exists(CONFIG_PATH):
             return 409, {"error": "Cannot apply tunnel before a WireGuard configuration is installed."}
@@ -2730,7 +2737,40 @@ def import_wireguard_config(payload):
             lazy_sync(pubkey)
         except Exception:
             pass
-    return 200, {"status": "ok", "pubkey": pubkey, "mynode": get_mynode_reconciler_status()}
+    resp = {"status": "ok", "pubkey": pubkey, "mynode": get_mynode_reconciler_status()}
+    if payload.get("applyNow") is True and not is_secure_mode():
+        _reconcile_code, reconcile_body = run_mynode_reconciler("apply")
+        resp["reconcile"] = reconcile_body
+        resp["mynode"] = get_mynode_reconciler_status()
+    return 200, resp
+
+
+def export_wireguard_config():
+    """Exports the stored WireGuard .conf file via POST /api/config/export
+    (CSRF-protected, same-origin only, never exposed on GET)."""
+    with meta_lock():
+        active_conf = None
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                    active_conf = f.read()
+            except OSError:
+                active_conf = None
+        meta = read_meta()
+        raw_recovered = meta.get("recoveredOrderConfigs")
+        recovered_dict = {}
+        if isinstance(raw_recovered, dict):
+            for k, v in raw_recovered.items():
+                if isinstance(k, str) and isinstance(v, str) and v.strip():
+                    recovered_dict[k] = v
+        if not active_conf and not recovered_dict:
+            return 404, {"error": "No WireGuard configuration is stored yet."}
+        return 200, {
+            "status": "ok",
+            "config": active_conf,
+            "publicKey": get_wg_pubkey() if active_conf else None,
+            "recoveredConfigs": recovered_dict,
+        }
 
 
 def connect_nwc_wallet(payload):
