@@ -261,7 +261,7 @@ class TestBridgeMyNode(unittest.TestCase):
         h1.do_GET()
         self.assertEqual(h1.status_code, 200)
 
-        # 2. Local nginx reverse proxy forwarding LAN IP Host: 192.168.1.50:8740
+        # 2. Local nginx reverse proxy forwarding LAN IP Host: 192.168.1.50:8740 (/api/status and /api/health alias)
         h2 = _FakeHTTPRequestHandler(
             "GET",
             "/api/status",
@@ -270,6 +270,19 @@ class TestBridgeMyNode(unittest.TestCase):
         )
         h2.do_GET()
         self.assertEqual(h2.status_code, 200)
+        status_json = json.loads(h2.wfile.getvalue().decode("utf-8"))
+        self.assertIn("status", status_json)
+
+        h2_health = _FakeHTTPRequestHandler(
+            "GET",
+            "/api/health",
+            headers={"Host": "192.168.1.50:8740", "Origin": "https://192.168.1.50:8740"},
+            client_ip="127.0.0.1",
+        )
+        h2_health.do_GET()
+        self.assertEqual(h2_health.status_code, 200)
+        health_json = json.loads(h2_health.wfile.getvalue().decode("utf-8"))
+        self.assertEqual(health_json["status"], status_json["status"])
 
         # 3. Reject DNS rebinding / external Host header
         h3 = _FakeHTTPRequestHandler(
