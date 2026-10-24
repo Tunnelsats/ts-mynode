@@ -108,13 +108,13 @@ EOF
 @test "apply and restore orchestrate tunnelsats.sh --managed mynode and clean Tor-only restore" {
   cat > "${TUNNELSATS_CONF_PATH}" <<'EOF'
 [Interface]
-PrivateKey = cGxlYXNlRG9Ob3RVc2VUaGlzVGVzdEtleUluUHJvZDA=
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 Address = 10.9.0.42/32
 # Server: eu1.tunnelsats.com
 # Port Forwarding: 34567
 
 [Peer]
-PublicKey = dGVzdFNlcnZlclB1YmxpY0tleVZhbHVlMTIzNDU2Nzg=
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
 Endpoint = eu1.tunnelsats.com:51820
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
@@ -148,4 +148,53 @@ EOF
   [[ "$output" == *'"status":"restored"'* ]]
   ! grep -q "TUNNELSATS" "${LND_EXTRA_CONFIG}"
   grep -q "uninstall --managed --non-interactive --yes" "${TEST_TMPDIR}/ts_calls.log"
+}
+
+@test "apply on existing managed install renders Table=off FwMark headers and sets managed.json to 0644" {
+  cat > "${TUNNELSATS_CONF_PATH}" <<'EOF'
+[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.9.0.42/32
+DNS = 8.8.8.8
+# Server: eu1.tunnelsats.com
+# Port Forwarding: 34567
+
+[Peer]
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+Endpoint = eu1.tunnelsats.com:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+EOF
+  chmod 0600 "${TUNNELSATS_CONF_PATH}"
+
+  cat > "${MANAGED_INVENTORY}" <<'EOF'
+{
+  "schema": 1,
+  "state": "installed",
+  "profile": "mynode",
+  "impl": "lnd",
+  "unit": "lnd.service"
+}
+EOF
+  chmod 0600 "${MANAGED_INVENTORY}"
+
+  export SYSTEMCTL_BIN="${TEST_TMPDIR}/mock_systemctl.sh"
+  cat > "${SYSTEMCTL_BIN}" <<'EOF'
+#!/usr/bin/env bash
+echo "systemctl: $*" >> "${TEST_TMPDIR}/systemctl_calls.log"
+exit 0
+EOF
+  chmod +x "${SYSTEMCTL_BIN}"
+
+  run "${RECONCILER}" apply "${TUNNELSATS_CONF_PATH}"
+  [ "$status" -eq 0 ]
+  [ -f "${WG_CONF_DST}" ]
+  grep -q "^#Tunnelsats-Managed" "${WG_CONF_DST}"
+  grep -q "^Table = off$" "${WG_CONF_DST}"
+  grep -q "^FwMark = 0x2000000$" "${WG_CONF_DST}"
+  grep -q "^PostUp = ip route replace default dev %i table 51820$" "${WG_CONF_DST}"
+  ! grep -iq "^DNS" "${WG_CONF_DST}"
+
+  inv_perm="$(stat -c '%a' "${MANAGED_INVENTORY}" 2>/dev/null || stat -f '%Lp' "${MANAGED_INVENTORY}")"
+  [ "${inv_perm}" = "644" ]
 }

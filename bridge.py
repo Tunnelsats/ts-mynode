@@ -3339,7 +3339,7 @@ def _intent_slot_summary(kind, req_slot, res_slot, now):
     # a restart and then records it, so it never stays processing for good.
     if status == "pending" and now - created_dt >= INTENT_TTL:
         status = "failed"
-        error = "The dashboard request timed out before StartOS processed it. Please try again."
+        error = "The dashboard request timed out before MyNode processed it. Please try again."
     # A failure answers the click that caused it. Past
     # INTENT_FAILURE_SHOWN_FOR it is old news: the slot reads as empty, so
     # the dashboard stops showing it on every visit.

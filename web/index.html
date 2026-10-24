@@ -124,6 +124,29 @@
           </div>
           <button
             type="button"
+            id="btn-header-backup"
+            class="header-btn header-btn-backup"
+            data-open-export-modal
+            title="Backup WireGuard configuration (tunnelsatsv2.conf)"
+          >
+            <svg
+              class="header-btn-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span class="header-btn-backup-label">Backup .conf</span>
+          </button>
+          <button
+            type="button"
             class="header-btn header-btn-faq"
             data-open-dialog="faq-modal"
             title="Frequently asked questions"
@@ -276,10 +299,9 @@
           <div class="hero-copy">
             <h2 id="setup-heading">Get started with TunnelSats</h2>
             <p class="hero-desc">
-              Route clearnet Lightning peer connections for
-              <strong>LND, Core Lightning or Eclair</strong> through a dedicated
-              WireGuard port, so peers see a TunnelSats address instead of your
-              home IP.
+              Route clearnet Lightning peer connections for your MyNode
+              <strong>LND</strong> node through a dedicated WireGuard port, so
+              peers see a TunnelSats address instead of your home IP.
             </p>
           </div>
         </div>
@@ -461,21 +483,32 @@
               <img src="icons/connected.png" alt="" class="brand-tile-icon" />
               <h2 id="connection-heading">Connection</h2>
             </div>
-            <button type="button" class="text-btn" data-tab-target="verify">
-              Verify on the node
-              <svg
-                class="text-btn-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+            <div class="card-header-actions">
+              <button
+                type="button"
+                id="btn-overview-backup"
+                class="btn-copy btn-backup-inline"
+                data-open-export-modal
+                title="Backup WireGuard configuration (tunnelsatsv2.conf)"
               >
-                <path d="M5 12h14M13 6l6 6-6 6" />
-              </svg>
-            </button>
+                Backup .conf
+              </button>
+              <button type="button" class="text-btn" data-tab-target="verify">
+                Verify on the node
+                <svg
+                  class="text-btn-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <ol class="route" aria-label="Configured route">
@@ -828,9 +861,291 @@
           <span class="badge-pill">MyNode App Controls</span>
         </div>
         <p class="muted">
-          Buy a subscription in another region, manage MyNode host routing, or
+          Manage MyNode host routing, buy a subscription in another region, or
           import, export, and connect NWC auto-renewal.
         </p>
+
+        <!-- MyNode Dual-Mode & Reconciler Control Card -->
+        <div id="mynode-mode-card" class="manage-buy-composer reconciler-card">
+          <div class="step-header-row reconciler-header-row">
+            <div class="reconciler-title-group">
+              <span class="reconciler-title-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </span>
+              <div>
+                <h3 class="subhead">MyNode Execution Mode &amp; Host Reconciler</h3>
+                <p id="mynode-mode-desc" class="muted reconciler-subdesc">
+                  Orchestrates host-level WireGuard routing (<code>tunnelsats.slice</code>) and LND hybrid Clearnet + Tor configuration on MyNode.
+                </p>
+              </div>
+            </div>
+            <span id="mynode-mode-badge" class="badge-pill">Mode A: Integrated</span>
+          </div>
+
+          <div class="reconciler-mode-grid" aria-label="MyNode execution modes">
+            <div id="mynode-mode-tile-a" class="reconciler-mode-tile is-selected">
+              <div class="reconciler-mode-tile-head">
+                <svg
+                  class="reconciler-mode-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                <strong>Mode A: Integrated 1-Click (Default)</strong>
+              </div>
+              <p>
+                Automatically updates <code>lnd_extra_config.conf</code> and applies <code>tunnelsats.sh --managed mynode</code> from the MyNode UI via the scoped root reconciler.
+              </p>
+            </div>
+            <div id="mynode-mode-tile-b" class="reconciler-mode-tile">
+              <div class="reconciler-mode-tile-head">
+                <svg
+                  class="reconciler-mode-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
+                <strong>Mode B: Secure Manual CLI</strong>
+              </div>
+              <p>
+                Disables privileged execution from the web service (<code>sudoers</code> removed). Stages <code>tunnelsatsv2.conf</code> locally and provides copy-paste SSH commands.
+              </p>
+            </div>
+          </div>
+
+          <div class="reconciler-table-wrap">
+            <table class="reconciler-table" aria-label="MyNode host reconciler telemetry">
+              <thead>
+                <tr>
+                  <th scope="col">Subsystem</th>
+                  <th scope="col">Live State</th>
+                  <th scope="col">Host Target &amp; Scope</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">
+                    <div class="reconciler-row-label">
+                      <svg
+                        class="reconciler-row-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <line x1="4" y1="21" x2="4" y2="14" />
+                        <line x1="4" y1="10" x2="4" y2="3" />
+                        <line x1="12" y1="21" x2="12" y2="12" />
+                        <line x1="12" y1="8" x2="12" y2="3" />
+                        <line x1="20" y1="21" x2="20" y2="16" />
+                        <line x1="20" y1="12" x2="20" y2="3" />
+                        <line x1="1" y1="14" x2="7" y2="14" />
+                        <line x1="9" y1="8" x2="15" y2="8" />
+                        <line x1="17" y1="16" x2="23" y2="16" />
+                      </svg>
+                      <span>Execution Mode</span>
+                    </div>
+                  </th>
+                  <td>
+                    <span id="mynode-val-mode" class="reconciler-status-pill is-ok">Mode A: Integrated</span>
+                  </td>
+                  <td class="reconciler-target-cell">
+                    <code>/etc/sudoers.d/tunnelsats-reconcile</code>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <div class="reconciler-row-label">
+                      <svg
+                        class="reconciler-row-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      </svg>
+                      <span>Managed Dataplane</span>
+                    </div>
+                  </th>
+                  <td>
+                    <span id="mynode-val-managed" class="reconciler-status-pill">Not Installed</span>
+                  </td>
+                  <td class="reconciler-target-cell">
+                    <code>tunnelsats.slice</code> · <code>inet tunnelsats</code>
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <div class="reconciler-row-label">
+                      <svg
+                        class="reconciler-row-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                      </svg>
+                      <span>LND Extra Config</span>
+                    </div>
+                  </th>
+                  <td>
+                    <span id="mynode-val-lnd-extra" class="reconciler-status-pill">Tor-Only</span>
+                  </td>
+                  <td class="reconciler-target-cell">
+                    <code>/mnt/hdd/mynode/settings/lnd_extra_config.conf</code>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="action-controls reconciler-actions">
+            <button
+              type="button"
+              id="btn-mynode-apply"
+              class="btn-intent"
+              data-mynode-reconcile="apply"
+            >
+              <svg
+                class="btn-icon-svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <span>Apply Tunnel on MyNode</span>
+            </button>
+            <button
+              type="button"
+              id="btn-mynode-restore"
+              class="btn-intent btn-intent-secondary"
+              data-mynode-reconcile="restore"
+            >
+              <svg
+                class="btn-icon-svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              <span>Restore Tor-Only Mode</span>
+            </button>
+            <button
+              type="button"
+              id="btn-mynode-backup"
+              class="btn-intent btn-intent-secondary"
+              data-open-export-modal
+            >
+              <svg
+                class="btn-icon-svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>Backup .conf</span>
+            </button>
+            <button
+              type="button"
+              id="btn-mynode-toggle-mode"
+              class="btn-intent btn-intent-secondary"
+              data-mynode-toggle-mode
+            >
+              Switch to Mode B (Secure / Manual CLI)
+            </button>
+          </div>
+
+          <div class="reconciler-backup-callout" role="note">
+            <svg
+              class="reconciler-callout-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+            </svg>
+            <p>
+              <strong>Back up before uninstalling:</strong> MyNode does not export app keys on uninstall. Click <strong>Backup .conf</strong> above to save a copy of your <code>tunnelsatsv2.conf</code> before uninstalling TunnelSats or reflashing your device.
+            </p>
+          </div>
+
+          <div class="prop-item">
+            <span class="prop-label">Manual SSH Command (Mode B / Audit)</span>
+            <div class="prop-value-group">
+              <code id="mynode-manual-cmd" class="prop-value"
+                >sudo /usr/local/sbin/tunnelsats-reconcile status</code
+              >
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="mynode-manual-cmd"
+                title="Copy manual CLI command"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Secondary Server Switch / New Subscription Composer -->
         <div class="manage-buy-composer">
@@ -884,73 +1199,6 @@
             >
               Buy New Subscription in Selected Region
             </button>
-          </div>
-        </div>
-
-        <!-- MyNode Dual-Mode & Reconciler Control Card -->
-        <div id="mynode-mode-card" class="manage-buy-composer">
-          <div class="step-header-row">
-            <h3 class="subhead">MyNode Execution Mode &amp; Host Reconciler</h3>
-            <span id="mynode-mode-badge" class="badge-pill">Mode A: Integrated</span>
-          </div>
-          <p id="mynode-mode-desc" class="muted">
-            Mode A (Integrated Mode, default) runs <code>reconcile_mynode.sh</code> automatically from the web UI. Mode B (Secure / Manual CLI Mode) disables privileged execution from the web UI and provides copyable SSH commands.
-          </p>
-          <dl class="connection-facts mynode-telemetry-facts">
-            <div class="fact">
-              <dt>Execution Mode</dt>
-              <dd id="mynode-val-mode">Mode A: Integrated</dd>
-            </div>
-            <div class="fact">
-              <dt>Managed Dataplane</dt>
-              <dd id="mynode-val-managed">Not Installed</dd>
-            </div>
-            <div class="fact">
-              <dt>LND Extra Config</dt>
-              <dd id="mynode-val-lnd-extra">Tor-Only</dd>
-            </div>
-          </dl>
-          <div class="action-controls">
-            <button
-              type="button"
-              id="btn-mynode-toggle-mode"
-              class="btn-intent btn-intent-secondary"
-              data-mynode-toggle-mode
-            >
-              Switch to Mode B (Secure / Manual CLI)
-            </button>
-            <button
-              type="button"
-              id="btn-mynode-apply"
-              class="btn-intent"
-              data-mynode-reconcile="apply"
-            >
-              Apply Tunnel on MyNode
-            </button>
-            <button
-              type="button"
-              id="btn-mynode-restore"
-              class="btn-intent btn-intent-secondary"
-              data-mynode-reconcile="restore"
-            >
-              Restore Tor-Only Mode
-            </button>
-          </div>
-          <div class="prop-item">
-            <span class="prop-label">Manual SSH Command (Mode B / Audit)</span>
-            <div class="prop-value-group">
-              <code id="mynode-manual-cmd" class="prop-value"
-                >sudo /usr/local/sbin/tunnelsats-reconcile status</code
-              >
-              <button
-                type="button"
-                class="btn-copy"
-                data-copy="mynode-manual-cmd"
-                title="Copy manual CLI command"
-              >
-                Copy
-              </button>
-            </div>
           </div>
         </div>
 
@@ -1138,15 +1386,19 @@
               <img src="icons/shield.png" alt="" class="brand-tile-icon" />
               <h2 id="privacy-heading">Verify Routing on the Node</h2>
             </div>
-            <span class="badge-pill">Node Container CLI</span>
+            <span class="badge-pill">MyNode Host CLI</span>
           </div>
           <p class="muted">
-            WireGuard runs inside the target Lightning node container, not in
-            TunnelSats. This page cannot see the node’s network stack; to check
-            the tunnel, attach to the node over SSH:
+            WireGuard (<code>wg-quick@tunnelsatsv2.service</code>),
+            <code>tunnelsats.slice</code>, and the fail-closed
+            <code>tunnelsats-killswitch.service</code> (<code>inet tunnelsats</code>)
+            run natively on the MyNode host kernel via
+            <code>tunnelsats.sh --managed mynode --impl lnd</code>. To inspect
+            the live tunnel and routing rules, attach to your MyNode device over
+            SSH:
           </p>
           <div class="prop-item">
-            <span class="prop-label">Attach to target node</span>
+            <span class="prop-label">Attach to MyNode host</span>
             <div class="prop-value-group">
               <code id="attach-command" class="prop-value"
                 >ssh admin@mynode.local</code
@@ -1163,7 +1415,21 @@
           </div>
           <ul class="command-list">
             <li>
-              <code id="cmd-wg-show">wg show</code>
+              <code id="cmd-ts-verify"
+                >sudo /usr/local/sbin/tunnelsats verify --json</code
+              >
+              <span>Managed dataplane and kill-switch attestation</span>
+              <button
+                type="button"
+                class="btn-copy"
+                data-copy="cmd-ts-verify"
+                title="Copy tunnelsats verify"
+              >
+                Copy
+              </button>
+            </li>
+            <li>
+              <code id="cmd-wg-show">sudo wg show tunnelsatsv2</code>
               <span>WireGuard interface and peer handshake</span>
               <button
                 type="button"
@@ -1176,7 +1442,7 @@
             </li>
             <li>
               <code id="cmd-ip-rule">ip rule</code>
-              <span>Policy routing rules</span>
+              <span>Policy routing rules (priority 21821 to table 51820)</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1188,7 +1454,7 @@
             </li>
             <li>
               <code id="cmd-ip-route">ip route show table 51820</code>
-              <span>Tunnel routing table</span>
+              <span>Tunnel routing table (default dev tunnelsatsv2)</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1202,7 +1468,7 @@
               <code id="cmd-egress-v4"
                 >curl -4 --max-time 10 https://ifconfig.me</code
               >
-              <span>IPv4 egress address (should be the VPN server)</span>
+              <span>IPv4 egress address check</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1216,7 +1482,7 @@
               <code id="cmd-egress-v6"
                 >curl -6 --max-time 10 https://ifconfig.me</code
               >
-              <span>IPv6 egress (should fail unless IPv6 is enabled)</span>
+              <span>IPv6 egress check (blocked inside tunnelsats.slice)</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1227,15 +1493,46 @@
               </button>
             </li>
           </ul>
-          <!-- prettier-ignore -->
-          <p class="muted caveat">
-            <strong>Kill switch:</strong> Egress protection is enforced by the
-            Lightning node package (<code>renderWgQuick</code>). Require
-            <strong>LND 0.21.3-beta:10, Core Lightning 26.6.8:3 or Eclair 0.14.3:3</strong>
-            or newer so the kill-switch rule stays armed if <code>wg0</code>
-            drops. If a subscription expires, renew it or turn off Clearnet over
-            VPN on the node.
-          </p>
+          <div class="caveat killswitch-callout">
+            <div class="killswitch-callout-header">
+              <svg
+                class="killswitch-callout-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <strong
+                >MyNode Fail-Closed Kill Switch (<code
+                  >tunnelsats-killswitch.service</code
+                >)</strong
+              >
+            </div>
+            <p class="muted">
+              Outbound leak protection for MyNode <strong>LND</strong> (<code
+                >lnd.service</code
+              >) is enforced at the Linux kernel level by the independent
+              <code>tunnelsats-killswitch.service</code> unit (nftables table
+              <code>inet tunnelsats</code> matching
+              <code>socket cgroupv2 level 2 "system.slice/tunnelsats.slice"</code>)
+              and audited every 60 seconds by
+              <code>tunnelsats-verifier.timer</code>. If
+              <code>wg-quick@tunnelsatsv2.service</code> drops or your
+              subscription expires, clearnet egress from
+              <code>lnd.service</code> is blocked immediately while Tor
+              (<code>127.0.0.1:9050</code>) and LAN management remain reachable.
+              Renew your subscription or click
+              <strong>Restore Tor-Only Mode</strong> in
+              <strong>Actions &amp; Plans</strong> to return LND to standard
+              Tor-only operation.
+            </p>
+          </div>
         </section>
       </div>
 
@@ -1599,12 +1896,37 @@
             </summary>
             <div class="faq-answer">
               <p>
-                TunnelSats manages your subscription and passes a WireGuard
-                configuration to your Lightning node package
-                (<strong>LND</strong>, <strong>Core Lightning</strong> or
-                <strong>Eclair</strong>) through its
-                <code>clearnet-vpn</code> action. The WireGuard interface runs
-                inside the node container itself.
+                TunnelSats manages your subscription, generates your X25519
+                WireGuard keys locally on MyNode
+                (<code>/mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf</code>),
+                configures hybrid Clearnet + Tor routing in
+                <code>/mnt/hdd/mynode/settings/lnd_extra_config.conf</code>,
+                and isolates <strong>LND</strong> (<code>lnd.service</code>)
+                inside the fail-closed <code>tunnelsats.slice</code> kernel
+                dataplane (<code>tunnelsats.sh --managed mynode --impl lnd</code>).
+              </p>
+            </div>
+          </details>
+
+          <details class="faq-item" name="faq">
+            <summary class="faq-question">
+              How do I back up or export my WireGuard configuration before uninstalling or reflashing MyNode?
+            </summary>
+            <div class="faq-answer">
+              <p>
+                Unlike appliance-wide backup images, uninstalling an app or
+                reflashing your MyNode drive can remove local app data if not
+                backed up first. Always click the <strong>Backup .conf</strong>
+                button in the top header (or <strong>Export WireGuard Configuration</strong>
+                in the <strong>Actions &amp; Plans</strong> tab) to download
+                <code>tunnelsatsv2.conf</code> to your computer before
+                uninstalling.
+              </p>
+              <p class="faq-note">
+                Your <code>tunnelsatsv2.conf</code> file contains your WireGuard
+                private key and dedicated port; you can restore your active
+                subscription anytime on a fresh MyNode installation via
+                <strong>Import Subscription</strong>.
               </p>
             </div>
           </details>

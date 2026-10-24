@@ -26,4 +26,15 @@ chmod 0700 "$STORAGE_DIR"
 chmod +x "$INSTALL_DIR/bridge.py" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/scripts/"*.sh 2>/dev/null || true
 
+APP_JSON="/usr/share/mynode_apps/tunnelsats/tunnelsats.json"
+APP_VER="v0.1.0"
+if [ -f "$APP_JSON" ] && command -v jq >/dev/null 2>&1; then
+    APP_VER=$(jq -r '.latest_version // "v0.1.0"' "$APP_JSON" 2>/dev/null || echo "v0.1.0")
+fi
+mkdir -p /home/bitcoin/.mynode /mnt/hdd/mynode/settings 2>/dev/null || true
+printf '%s\n' "$APP_VER" > /home/bitcoin/.mynode/tunnelsats_version 2>/dev/null || true
+printf '%s\n' "$APP_VER" > /mnt/hdd/mynode/settings/tunnelsats_version 2>/dev/null || true
+chown bitcoin:bitcoin /home/bitcoin/.mynode/tunnelsats_version /mnt/hdd/mynode/settings/tunnelsats_version 2>/dev/null || true
+rm -f /tmp/app_cache.json 2>/dev/null || true
+
 echo "================== DONE INSTALLING APP ================="

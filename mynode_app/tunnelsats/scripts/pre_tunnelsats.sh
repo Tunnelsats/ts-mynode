@@ -49,3 +49,19 @@ fi
 if [ -x "$RECONCILE_SBIN" ]; then
     "$RECONCILE_SBIN" boot-sync || true
 fi
+
+if [ -f /etc/tunnelsats/managed.json ]; then
+    chmod 0755 /etc/tunnelsats 2>/dev/null || true
+    chmod 0644 /etc/tunnelsats/managed.json 2>/dev/null || true
+fi
+
+APP_JSON="/usr/share/mynode_apps/tunnelsats/tunnelsats.json"
+if [ -f "$APP_JSON" ] && [ -d /home/bitcoin/.mynode ] && [ ! -f /home/bitcoin/.mynode/tunnelsats_version ]; then
+    APP_VER="v0.1.0"
+    if command -v jq >/dev/null 2>&1; then
+        APP_VER=$(jq -r '.latest_version // "v0.1.0"' "$APP_JSON" 2>/dev/null || echo "v0.1.0")
+    fi
+    printf '%s\n' "$APP_VER" > /home/bitcoin/.mynode/tunnelsats_version 2>/dev/null || true
+    chown bitcoin:bitcoin /home/bitcoin/.mynode/tunnelsats_version 2>/dev/null || true
+    rm -f /tmp/app_cache.json 2>/dev/null || true
+fi

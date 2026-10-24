@@ -422,18 +422,40 @@ class TestBridgeMyNode(unittest.TestCase):
     def test_web_ui_modals_and_no_startos_strings(self):
         html_text = (REPO_ROOT / "web" / "index.html").read_text(encoding="utf-8")
         js_text = (REPO_ROOT / "web" / "script.js").read_text(encoding="utf-8")
+        css_text = (REPO_ROOT / "web" / "style.css").read_text(encoding="utf-8")
         for modal_id in ("import-config-modal", "export-config-modal", "nwc-wallet-modal"):
             self.assertIn(modal_id, html_text)
             self.assertIn(modal_id, js_text)
         for tel_id in ("mynode-val-mode", "mynode-val-managed", "mynode-val-lnd-extra"):
             self.assertIn(tel_id, html_text)
             self.assertIn(tel_id, js_text)
-        self.assertNotIn("StartOS", html_text)
-        self.assertNotIn("StartOS", js_text)
-        self.assertNotIn("Services → TunnelSats → Actions", html_text)
-        self.assertNotIn("Services → TunnelSats → Actions", js_text)
-        self.assertNotIn("\u2014", html_text)
-        self.assertNotIn("\u2014", js_text)
+        for required_ui in (
+            "btn-header-backup",
+            "btn-overview-backup",
+            "btn-mynode-backup",
+            "reconciler-table",
+            "mynode-mode-tile-a",
+            "mynode-mode-tile-b",
+            "tunnelsats-killswitch.service",
+            "How do I back up or export my WireGuard configuration",
+        ):
+            self.assertIn(required_ui, html_text)
+        for forbidden in (
+            "StartOS",
+            "Services → TunnelSats → Actions",
+            "Core Lightning",
+            "Eclair",
+            "renderWgQuick",
+            "clearnet-vpn",
+            "Node Container CLI",
+            "\u2014",
+        ):
+            self.assertNotIn(forbidden, html_text)
+            self.assertNotIn(forbidden, js_text)
+        self.assertIn("--fs-md: 1rem;", css_text)
+        self.assertIn("--fs-2xs: 0.8125rem;", css_text)
+        self.assertNotIn("StartOS", css_text)
+        self.assertNotIn("\u2014", css_text)
 
 
 def _iso_future(hours):

@@ -24,4 +24,6 @@ else
     sudo -n /usr/local/sbin/tunnelsats-reconcile uninstall || true
 fi
 
+rm -f /home/bitcoin/.mynode/tunnelsats_version /mnt/hdd/mynode/settings/tunnelsats_version /tmp/app_cache.json 2>/dev/null || true
+
 echo "================== DONE UNINSTALLING APP ================="
