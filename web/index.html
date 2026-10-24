@@ -483,32 +483,21 @@
               <img src="icons/connected.png" alt="" class="brand-tile-icon" />
               <h2 id="connection-heading">Connection</h2>
             </div>
-            <div class="card-header-actions">
-              <button
-                type="button"
-                id="btn-overview-backup"
-                class="btn-copy btn-backup-inline"
-                data-open-export-modal
-                title="Backup WireGuard configuration (tunnelsatsv2.conf)"
+            <button type="button" class="text-btn" data-tab-target="verify">
+              Verify on the node
+              <svg
+                class="text-btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
               >
-                Backup .conf
-              </button>
-              <button type="button" class="text-btn" data-tab-target="verify">
-                Verify on the node
-                <svg
-                  class="text-btn-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h14M13 6l6 6-6 6" />
-                </svg>
-              </button>
-            </div>
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
+            </button>
           </div>
 
           <ol class="route" aria-label="Configured route">
@@ -632,13 +621,13 @@
                   class="ring-gauge-svg"
                   aria-hidden="true"
                 >
-                  <circle class="ring-track" cx="60" cy="60" r="50" />
+                  <circle class="ring-track" cx="60" cy="60" r="52" />
                   <circle
                     id="subscription-ring-arc"
                     class="ring-arc is-ok"
                     cx="60"
                     cy="60"
-                    r="50"
+                    r="52"
                     pathLength="100"
                     stroke-dasharray="100"
                     stroke-dashoffset="100"
@@ -1081,28 +1070,6 @@
             </button>
             <button
               type="button"
-              id="btn-mynode-backup"
-              class="btn-intent btn-intent-secondary"
-              data-open-export-modal
-            >
-              <svg
-                class="btn-icon-svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              <span>Backup .conf</span>
-            </button>
-            <button
-              type="button"
               id="btn-mynode-toggle-mode"
               class="btn-intent btn-intent-secondary"
               data-mynode-toggle-mode
@@ -1125,7 +1092,7 @@
               <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
             </svg>
             <p>
-              <strong>Back up before uninstalling:</strong> MyNode does not export app keys on uninstall. Click <strong>Backup .conf</strong> above to save a copy of your <code>tunnelsatsv2.conf</code> before uninstalling TunnelSats or reflashing your device.
+              <strong>Back up before uninstalling:</strong> MyNode does not export app keys on uninstall. Click <strong>Backup .conf</strong> in the top header to save a copy of your <code>tunnelsatsv2.conf</code> before uninstalling TunnelSats or reflashing your device.
             </p>
           </div>
 
@@ -1296,26 +1263,6 @@
               </span>
             </div>
           </li>
-          <li id="action-export" class="action-item action-item-with-icon">
-            <img src="icons/keys.png" alt="" class="brand-tile-icon-sm" />
-            <div class="action-item-body">
-              <span class="action-name">Export WireGuard Configuration</span>
-              <span class="action-desc">
-                Read or download the stored <code>tunnelsatsv2.conf</code> file
-                on MyNode for backup (includes your private key).
-              </span>
-              <div class="action-item-cta">
-                <button
-                  type="button"
-                  id="btn-open-export-modal"
-                  class="btn-intent btn-intent-secondary btn-action-inline"
-                  data-open-export-modal
-                >
-                  Export Config
-                </button>
-              </div>
-            </div>
-          </li>
         </ul>
       </section>
 
@@ -1466,9 +1413,9 @@
             </li>
             <li>
               <code id="cmd-egress-v4"
-                >curl -4 --max-time 10 https://ifconfig.me</code
+                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -4s https://ifconfig.me</code
               >
-              <span>IPv4 egress address check</span>
+              <span>IPv4 egress inside tunnelsats.slice (returns TunnelSats VPN IP)</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1480,9 +1427,9 @@
             </li>
             <li>
               <code id="cmd-egress-v6"
-                >curl -6 --max-time 10 https://ifconfig.me</code
+                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -6s https://ifconfig.me</code
               >
-              <span>IPv6 egress check (blocked inside tunnelsats.slice)</span>
+              <span>IPv6 leak test inside tunnelsats.slice (blocked by kill switch)</span>
               <button
                 type="button"
                 class="btn-copy"
@@ -1493,45 +1440,46 @@
               </button>
             </li>
           </ul>
-          <div class="caveat killswitch-callout">
-            <div class="killswitch-callout-header">
-              <svg
-                class="killswitch-callout-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="m9 12 2 2 4-4" />
-              </svg>
-              <strong
-                >MyNode Fail-Closed Kill Switch (<code
-                  >tunnelsats-killswitch.service</code
-                >)</strong
-              >
+          <div class="killswitch-panel" role="region" aria-label="MyNode Fail-Closed Kill Switch">
+            <div class="killswitch-panel-head">
+              <div class="killswitch-panel-title">
+                <svg
+                  class="killswitch-callout-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+                <strong>How MyNode Protects Your Node (<code>tunnelsats-killswitch.service</code>)</strong>
+              </div>
+              <span class="reconciler-status-pill is-ok">Fail-Closed Kernel Guard</span>
             </div>
-            <p class="muted">
-              Outbound leak protection for MyNode <strong>LND</strong> (<code
-                >lnd.service</code
-              >) is enforced at the Linux kernel level by the independent
-              <code>tunnelsats-killswitch.service</code> unit (nftables table
-              <code>inet tunnelsats</code> matching
-              <code>socket cgroupv2 level 2 "system.slice/tunnelsats.slice"</code>)
-              and audited every 60 seconds by
-              <code>tunnelsats-verifier.timer</code>. If
-              <code>wg-quick@tunnelsatsv2.service</code> drops or your
-              subscription expires, clearnet egress from
-              <code>lnd.service</code> is blocked immediately while Tor
-              (<code>127.0.0.1:9050</code>) and LAN management remain reachable.
-              Renew your subscription or click
-              <strong>Restore Tor-Only Mode</strong> in
-              <strong>Actions &amp; Plans</strong> to return LND to standard
-              Tor-only operation.
-            </p>
+            <div class="killswitch-pillars">
+              <div class="killswitch-pillar">
+                <strong>1. LND-Only Split Tunnel</strong>
+                <p>
+                  Only <code>lnd.service</code> runs inside <code>tunnelsats.slice</code>. Bitcoin Core, Tor, and SSH stay on your normal host network.
+                </p>
+              </div>
+              <div class="killswitch-pillar">
+                <strong>2. Zero Home-IP Leaks</strong>
+                <p>
+                  If WireGuard drops or your plan expires, kernel <code>nftables</code> rules block clearnet packets from LND while keeping Tor (<code>127.0.0.1:9050</code>) active.
+                </p>
+              </div>
+              <div class="killswitch-pillar">
+                <strong>3. 1-Click Tor Recovery</strong>
+                <p>
+                  Renew your plan to resume clearnet routing, or click <strong>Restore Tor-Only Mode</strong> in <strong>Actions &amp; Plans</strong> anytime.
+                </p>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -1917,8 +1865,7 @@
                 Unlike appliance-wide backup images, uninstalling an app or
                 reflashing your MyNode drive can remove local app data if not
                 backed up first. Always click the <strong>Backup .conf</strong>
-                button in the top header (or <strong>Export WireGuard Configuration</strong>
-                in the <strong>Actions &amp; Plans</strong> tab) to download
+                pill in the top header to download
                 <code>tunnelsatsv2.conf</code> to your computer before
                 uninstalling.
               </p>
@@ -1976,9 +1923,11 @@
               <p class="faq-note">
                 If the wallet balance or budget is too low, or NWC fails 3
                 times, TunnelSats displays the renewal invoice on this dashboard
-                so you can pay manually. Without NWC, reminders are posted at
-                <strong>7 days</strong> and <strong>3 days</strong> before
-                expiry.
+                so you can pay manually. MyNode does not have an OS push
+                notification inbox; without NWC, this dashboard highlights your
+                subscription in amber at <strong>7 days</strong>
+                (<code>Renew soon</code>) and red at <strong>3 days</strong>
+                (<code>Renew now</code>) before expiry.
               </p>
             </div>
           </details>

@@ -431,15 +431,21 @@ class TestBridgeMyNode(unittest.TestCase):
             self.assertIn(tel_id, js_text)
         for required_ui in (
             "btn-header-backup",
-            "btn-overview-backup",
-            "btn-mynode-backup",
             "reconciler-table",
             "mynode-mode-tile-a",
             "mynode-mode-tile-b",
             "tunnelsats-killswitch.service",
+            "systemd-run -q -P --slice=tunnelsats.slice",
+            "killswitch-pillars",
             "How do I back up or export my WireGuard configuration",
         ):
             self.assertIn(required_ui, html_text)
+        for removed_redundant in (
+            "btn-overview-backup",
+            "btn-mynode-backup",
+            'id="action-export"',
+        ):
+            self.assertNotIn(removed_redundant, html_text)
         for forbidden in (
             "StartOS",
             "Services → TunnelSats → Actions",

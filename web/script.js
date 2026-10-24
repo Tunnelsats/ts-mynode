@@ -29,10 +29,11 @@ const BANDWIDTH_WARN_PCT = 70
 const BANDWIDTH_CRITICAL_PCT = 90
 // The renewal timeline spans at least the last 30 days before the expiry.
 const TIMELINE_MIN_WINDOW_MS = 30 * DAY_MS
-// The Subscription health check posts reminders 7 and 3 days before expiry.
+// Renewal timeline thresholds: 7 days (NWC auto-renew window & amber warning)
+// and 3 days (critical red alert) before expiry.
 const REMINDER_MARKERS = Object.freeze([
-  Object.freeze({ kind: '7d', days: 7, label: '7-day reminder' }),
-  Object.freeze({ kind: '3d', days: 3, label: '3-day reminder' }),
+  Object.freeze({ kind: '7d', days: 7, label: '7d · Auto-renew / warning' }),
+  Object.freeze({ kind: '3d', days: 3, label: '3d · Critical alert' }),
 ])
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const BOLT11_RE = /^ln(?:bcrt|bc|tbs|tb|sb)[0-9a-z]{20,4000}$/i
@@ -1859,7 +1860,6 @@ function renderActions(m) {
     'connect-wallet',
     'import',
     'configure',
-    'export',
   ]) {
     const item = byId(`action-${id}`)
     if (item) item.classList.toggle('is-suggested', suggested.includes(id))
