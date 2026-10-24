@@ -80,6 +80,19 @@ class TestMyNodeAppSDK(unittest.TestCase):
                     offenders.append(str(path.relative_to(REPO_ROOT)))
         self.assertEqual(offenders, [], f"Found forbidden U+2014 em dashes in: {offenders}")
 
+    def test_mynode_version_tracking_and_readme_branding(self):
+        for rel in (
+            "scripts/deploy_mynode.sh",
+            "mynode_app/tunnelsats/scripts/install_tunnelsats.sh",
+            "mynode_app/tunnelsats/scripts/pre_tunnelsats.sh",
+            "mynode_app/tunnelsats/scripts/uninstall_tunnelsats.sh",
+        ):
+            content = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            self.assertIn("/home/bitcoin/.mynode/tunnelsats_version", content, f"Missing version file in {rel}")
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("ts_logo_rectangle.svg", readme)
+        self.assertIn("myNode is a trademark of MyNode LLC", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

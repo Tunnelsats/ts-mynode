@@ -47,7 +47,14 @@ chmod 0700 "$STORAGE_DIR"
 ln -sfn "$INSTALL_DIR" /opt/mynode/ts-mynode
 rm -rf /tmp/mynode_tunnelsats_push
 
+APP_VER=$(jq -r '.latest_version // "v0.1.0"' "$DST/tunnelsats.json" 2>/dev/null || echo "v0.1.0")
+mkdir -p /home/bitcoin/.mynode /mnt/hdd/mynode/settings
+printf '%s\n' "$APP_VER" > /home/bitcoin/.mynode/tunnelsats_version
+printf '%s\n' "$APP_VER" > /mnt/hdd/mynode/settings/tunnelsats_version
+chown bitcoin:bitcoin /home/bitcoin/.mynode/tunnelsats_version /mnt/hdd/mynode/settings/tunnelsats_version 2>/dev/null || true
 touch /home/bitcoin/.mynode/install_tunnelsats
+rm -f /tmp/app_cache.json
+
 cp -f "$DST/tunnelsats.service" /etc/systemd/system/tunnelsats.service
 systemctl daemon-reload
 if [ -f "$DST/nginx/https_tunnelsats.conf" ]; then
@@ -55,6 +62,7 @@ if [ -f "$DST/nginx/https_tunnelsats.conf" ]; then
 fi
 systemctl restart www
 systemctl enable --now tunnelsats.service
+systemctl restart tunnelsats.service
 echo "Successfully deployed TunnelSats to myNode!"
 EOF
 )

@@ -61,17 +61,11 @@ const PLAN_PRICES_USD = Object.freeze(
 
 const NODE_LABELS = Object.freeze({
   lnd: 'LND',
-  cln: 'Core Lightning',
-  'c-lightning': 'Core Lightning',
-  eclair: 'Eclair',
 })
 
-// MyNode package IDs, for `start-cli package attach <id>`.
+// Target Lightning node identifiers on MyNode.
 const NODE_PACKAGE_IDS = Object.freeze({
   lnd: 'lnd',
-  cln: 'c-lightning',
-  'c-lightning': 'c-lightning',
-  eclair: 'eclair',
 })
 
 const VALID_TABS = Object.freeze(['overview', 'actions', 'verify'])
@@ -987,15 +981,31 @@ function suggestedActions(m) {
 /** Routing handoff state in words; never claims the tunnel is up. */
 function handoffText(m) {
   const handoff = m && m.handoff
-  if (!handoff) return 'No task raised yet'
-  if (handoff.pendingOff && handoff.pendingOff.length) {
-    return `Waiting for ${listNodes(handoff.pendingOff)} to turn off`
+  if (handoff) {
+    if (handoff.pendingOff && handoff.pendingOff.length) {
+      return `Waiting for ${listNodes(handoff.pendingOff)} to turn off`
+    }
+    if (handoff.unraised && handoff.unraised.length) {
+      return `Retrying task on ${listNodes(handoff.unraised)}`
+    }
+    if (handoff.activeTarget) {
+      return `Task raised on ${nodeLabel(handoff.activeTarget)}`
+    }
   }
-  if (handoff.unraised && handoff.unraised.length) {
-    return `Retrying task on ${listNodes(handoff.unraised)}`
-  }
-  if (handoff.activeTarget) {
-    return `Task raised on ${nodeLabel(handoff.activeTarget)}`
+  const mn = m && m.mynode
+  if (mn) {
+    if (mn.managedInstalled && mn.lndExtraConfigured) {
+      return `Active on LND (${mn.managedUnit || 'lnd.service'} · tunnelsats.slice)`
+    }
+    if (mn.managedInstalled) {
+      return `Managed dataplane installed (${mn.managedUnit || 'lnd.service'})`
+    }
+    if (mn.lndExtraConfigured) {
+      return 'LND hybrid config staged'
+    }
+    if (m.configured) {
+      return 'Config staged (Ready to Apply on MyNode)'
+    }
   }
   return 'No task raised yet'
 }
@@ -2505,6 +2515,23 @@ function renderMynodeControls(m) {
     'mynode-val-lnd-extra',
     mn.lndExtraConfigured ? 'Configured (# BEGIN TUNNELSATS)' : 'Tor-Only',
   )
+  const modePill = byId('mynode-val-mode')
+  if (modePill) {
+    modePill.classList.toggle('is-ok', !secure)
+    modePill.classList.toggle('is-warn', secure)
+  }
+  const managedPill = byId('mynode-val-managed')
+  if (managedPill) {
+    managedPill.classList.toggle('is-ok', Boolean(mn.managedInstalled))
+  }
+  const lndPill = byId('mynode-val-lnd-extra')
+  if (lndPill) {
+    lndPill.classList.toggle('is-ok', Boolean(mn.lndExtraConfigured))
+  }
+  const tileA = byId('mynode-mode-tile-a')
+  if (tileA) tileA.classList.toggle('is-selected', !secure)
+  const tileB = byId('mynode-mode-tile-b')
+  if (tileB) tileB.classList.toggle('is-selected', secure)
   const toggleBtn = byId('btn-mynode-toggle-mode')
   if (toggleBtn) {
     toggleBtn.textContent = secure

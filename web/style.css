@@ -1,5 +1,5 @@
 /*
- * TunnelSats dashboard for StartOS: one design system.
+ * TunnelSats MyNode UI: one design system.
  *
  * Fonts are bundled (web/fonts, SIL OFL 1.1) because the CSP allows
  * font-src 'self' only. Inter carries prose, labels, dates and metrics;
@@ -38,14 +38,14 @@
     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
     'Liberation Mono', monospace;
 
-  --fs-2xs: 0.6875rem;
-  --fs-xs: 0.75rem;
-  --fs-sm: 0.8125rem;
-  --fs-md: 0.875rem;
-  --fs-lg: 1rem;
-  --fs-xl: 1.125rem;
-  --fs-2xl: 1.5rem;
-  --fs-3xl: 2rem;
+  --fs-2xs: 0.8125rem;
+  --fs-xs: 0.875rem;
+  --fs-sm: 0.9375rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: 1.625rem;
+  --fs-3xl: 2.125rem;
   --fs-4xl: 2.75rem;
 
   --bg: #0f1115;
@@ -53,12 +53,12 @@
   --surface-dialog: #141923;
   --surface-sunken: rgba(0, 0, 0, 0.24);
   --surface-hover: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.075);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border: rgba(255, 255, 255, 0.085);
+  --border-strong: rgba(255, 255, 255, 0.18);
 
   --text: #f3f4f6;
-  --text-muted: #a3acb9;
-  --text-subtle: #8b95a5;
+  --text-muted: #b8c1ce;
+  --text-subtle: #9ca7b8;
 
   --brand: #facc15;
   --brand-light: #fde047;
@@ -109,11 +109,12 @@ body {
   margin: 0;
   min-height: 100vh;
   min-height: 100dvh;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--fs-md);
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -270,7 +271,7 @@ code {
   flex-direction: column;
   gap: 1.25rem;
   width: 100%;
-  max-width: 72rem;
+  max-width: 82rem;
   margin: 0 auto;
   padding: 1.25rem 1.5rem 2rem;
 }
@@ -278,44 +279,37 @@ code {
 /* ── Header ────────────────────────────────────────────────────────── */
 .command-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: max-content max-content max-content;
   align-items: center;
-  gap: 0.75rem 1.25rem;
-  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.625rem 0.75rem 0.625rem 1rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: rgba(17, 21, 30, 0.82);
+  background: rgba(17, 21, 30, 0.92);
   box-shadow: var(--shadow-card);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-
-@media (min-width: 861px) {
-  .command-header {
-    position: sticky;
-    top: 0.75rem;
-    z-index: 20;
-  }
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  min-width: 0;
+  gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .brand-logo {
   width: auto;
-  height: 1.75rem;
+  height: 1.875rem;
+  flex-shrink: 0;
 }
 
 .brand-tagline {
-  padding-left: 0.875rem;
+  padding-left: 0.75rem;
   border-left: 1px solid var(--border-strong);
-  color: var(--text-subtle);
+  color: #e5e7eb;
   font-size: var(--fs-xs);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
@@ -369,10 +363,10 @@ code {
 
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.375rem;
+  gap: 0.4375rem;
 }
 
 .status-badge {
@@ -462,6 +456,19 @@ code {
   color: var(--text);
 }
 
+.header-btn-backup {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.header-btn-backup:hover {
+  border-color: var(--brand);
+  background: rgba(250, 204, 21, 0.18);
+  color: var(--brand-light);
+}
+
 .header-btn-icon {
   flex: none;
   width: 1rem;
@@ -484,13 +491,13 @@ code {
   }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1260px) {
   .brand-tagline {
     display: none;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 1040px) {
   .command-header {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
@@ -539,7 +546,8 @@ code {
     height: 2rem;
   }
 
-  .header-btn-faq-label {
+  .header-btn-faq-label,
+  .header-btn-backup-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -548,13 +556,14 @@ code {
     white-space: nowrap;
   }
 
-  .header-btn-faq {
-    width: 2rem;
+  .header-btn-faq,
+  .header-btn-backup {
+    width: 2.25rem;
     padding: 0;
   }
 
   .header-btn-icon-only {
-    width: 2rem;
+    width: 2.25rem;
   }
 
   .nav-pill {
@@ -814,7 +823,7 @@ code {
   color: var(--brand);
 }
 
-/* A StartOS menu path, e.g. Services → TunnelSats → Actions. */
+/* Highlighted navigation path inside the MyNode UI. */
 .path {
   padding: 0.0625rem 0.375rem;
   border: 1px solid var(--border);
@@ -2435,7 +2444,7 @@ code {
 
 .command-list li {
   display: grid;
-  grid-template-columns: minmax(0, 20rem) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.875rem;
   padding: 0.375rem 0.375rem 0.375rem 0.875rem;
@@ -2878,6 +2887,267 @@ meter.gauge:-moz-meter-sub-sub-optimum::-moz-meter-bar {
 .mynode-telemetry-facts {
   margin-top: 0.25rem;
   margin-bottom: 0.25rem;
+}
+
+.card-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-backup-inline {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.btn-backup-inline:hover {
+  border-color: var(--brand);
+  background: rgba(250, 204, 21, 0.18);
+  color: var(--brand-light);
+}
+
+/* ── MyNode Execution Mode & Host Reconciler Card ──────────────────── */
+.reconciler-card {
+  display: grid;
+  gap: 1.125rem;
+}
+
+.reconciler-header-row {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.reconciler-title-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.reconciler-title-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.reconciler-title-icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.reconciler-subdesc {
+  margin-top: 0.25rem;
+}
+
+.reconciler-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem;
+}
+
+.reconciler-mode-tile {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.reconciler-mode-tile.is-selected {
+  border-color: var(--brand-line);
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.reconciler-mode-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.reconciler-mode-icon {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--brand);
+}
+
+.reconciler-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.reconciler-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--fs-sm);
+}
+
+.reconciler-table th,
+.reconciler-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.reconciler-table tbody tr:last-child th,
+.reconciler-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.reconciler-table thead th {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-subtle);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reconciler-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.reconciler-row-icon {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--brand);
+}
+
+.reconciler-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+}
+
+.reconciler-status-pill.is-ok {
+  border-color: var(--ok-line);
+  background: var(--ok-soft);
+  color: #86efac;
+}
+
+.reconciler-status-pill.is-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: #fcd34d;
+}
+
+.reconciler-target-cell {
+  color: var(--text-muted);
+}
+
+.reconciler-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.reconciler-backup-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--brand-line);
+  border-radius: var(--radius-sm);
+  background: rgba(250, 204, 21, 0.07);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.reconciler-backup-callout strong {
+  color: var(--text);
+}
+
+.reconciler-callout-icon {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.125rem;
+  color: var(--brand);
+}
+
+.killswitch-callout {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.killswitch-callout-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-size: var(--fs-md);
+}
+
+.killswitch-callout-icon {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--ok);
+}
+
+@media (max-width: 760px) {
+  .reconciler-mode-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reconciler-table thead {
+    display: none;
+  }
+
+  .reconciler-table,
+  .reconciler-table tbody,
+  .reconciler-table tr,
+  .reconciler-table th,
+  .reconciler-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .reconciler-table tr {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .reconciler-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .reconciler-table th,
+  .reconciler-table td {
+    padding: 0.25rem 0;
+    border-bottom: 0;
+  }
 }
 
 .action-item-cta {
