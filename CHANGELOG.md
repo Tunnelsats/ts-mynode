@@ -2,6 +2,10 @@
 
 All notable changes to the TunnelSats myNode application are documented in this file.
 
+## [v1.0.0] - 2026-10-24
+
+- Initial v1.0.0 production release for myNode BTC (App SDK v2)
+
 ## [v0.1.0] - 2026-10-23
 
 - Initial release of the native TunnelSats VPN app (`ts-mynode`) for myNode BTC (App SDK v2).

@@ -104,7 +104,7 @@ sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh restore
 
 ## Upstream `mynodebtc/mynode` Marketplace Submission
 
-1. Tag and release a new version in `Tunnelsats/ts-mynode` (e.g., `v0.1.0`).
+1. Tag and release a new version in `Tunnelsats/ts-mynode` (e.g., `v1.0.0`).
 2. Copy `mynode_app/tunnelsats/` to `rootfs/standard/usr/share/mynode_apps/tunnelsats/` in your `mynodebtc/mynode` fork and add `tunnelsats` to `MARKETPLACE_APPS` in `scripts/print_app_download_hashes.sh`.
 3. Run `scripts/print_app_download_hashes.sh tunnelsats` in `mynodebtc/mynode` and update `download_source_sha256` in `tunnelsats.json`.
 4. Verify with `./app_sdk/create.py check tunnelsats` and open a Pull Request to `mynodebtc/mynode`.

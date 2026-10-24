@@ -1841,24 +1841,25 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 _package_version_cache = None
 VERSION_JSON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.json")
-# What may follow "TunnelSats-StartOS/" in a request header.
+MYNODE_APP_JSON_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "mynode_app", "tunnelsats", "tunnelsats.json"
+)
+# What may follow "TunnelSats-MyNode/" in a request header.
 _PACKAGE_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+~-]{0,63}")
 
 
 def _package_semver(value):
-    """`value` without its ExVer revision ("1.0.0:0" -> "1.0.0"), or None
-    unless that is a plain version string."""
+    """`value` without its ExVer revision or leading 'v' ("v1.0.0" -> "1.0.0"),
+    or None unless that is a plain version string."""
     if not isinstance(value, str):
         return None
-    semver = value.strip().partition(":")[0]
+    semver = value.strip().lstrip("v").partition(":")[0]
     return semver if _PACKAGE_VERSION_RE.fullmatch(semver) else None
 
 
 def get_package_version():
-    """The package version without its ExVer revision: PACKAGE_VERSION, which
-    main passes from startos/versions/current.ts (startos/bridgeEnv.ts), else
-    version.json, which scripts/sync-version.js writes from the same file.
-    None if neither has one: never a guessed version."""
+    """The package version: PACKAGE_VERSION env var, version.json, or
+    mynode_app/tunnelsats/tunnelsats.json (.latest_version). None if none exist."""
     global _package_version_cache
     if _package_version_cache is not None:
         return _package_version_cache
@@ -1870,6 +1871,15 @@ def get_package_version():
                 data = json.load(f)
             if isinstance(data, dict):
                 version = _package_semver(data.get("semver") or data.get("version"))
+        except (OSError, ValueError):
+            pass
+
+    if version is None:
+        try:
+            with open(MYNODE_APP_JSON_PATH, "r") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                version = _package_semver(data.get("latest_version"))
         except (OSError, ValueError):
             pass
 

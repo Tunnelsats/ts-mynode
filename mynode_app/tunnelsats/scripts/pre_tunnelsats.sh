@@ -57,9 +57,9 @@ fi
 
 APP_JSON="/usr/share/mynode_apps/tunnelsats/tunnelsats.json"
 if [ -f "$APP_JSON" ] && [ -d /home/bitcoin/.mynode ] && [ ! -f /home/bitcoin/.mynode/tunnelsats_version ]; then
-    APP_VER="v0.1.0"
+    APP_VER="v1.0.0"
     if command -v jq >/dev/null 2>&1; then
-        APP_VER=$(jq -r '.latest_version // "v0.1.0"' "$APP_JSON" 2>/dev/null || echo "v0.1.0")
+        APP_VER=$(jq -r '.latest_version // "v1.0.0"' "$APP_JSON" 2>/dev/null || echo "v1.0.0")
     fi
     printf '%s\n' "$APP_VER" > /home/bitcoin/.mynode/tunnelsats_version 2>/dev/null || true
     chown bitcoin:bitcoin /home/bitcoin/.mynode/tunnelsats_version 2>/dev/null || true

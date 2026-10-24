@@ -1363,7 +1363,7 @@
           <ul class="command-list">
             <li>
               <code id="cmd-ts-verify"
-                >sudo /usr/local/sbin/tunnelsats verify --json</code
+                >sudo /usr/local/sbin/tunnelsats verify --json | jq</code
               >
               <span>Managed dataplane and kill-switch attestation</span>
               <button
@@ -1413,7 +1413,7 @@
             </li>
             <li>
               <code id="cmd-egress-v4"
-                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -4s https://ifconfig.me</code
+                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -4 -sS -w '\n' https://ifconfig.me</code
               >
               <span>IPv4 egress inside tunnelsats.slice (returns TunnelSats VPN IP)</span>
               <button
@@ -1427,9 +1427,9 @@
             </li>
             <li>
               <code id="cmd-egress-v6"
-                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -6s https://ifconfig.me</code
+                >sudo systemd-run -q -P --slice=tunnelsats.slice curl -6 -sS https://ifconfig.me</code
               >
-              <span>IPv6 leak test inside tunnelsats.slice (blocked by kill switch)</span>
+              <span>IPv6 leak test inside tunnelsats.slice (prints error when blocked)</span>
               <button
                 type="button"
                 class="btn-copy"
