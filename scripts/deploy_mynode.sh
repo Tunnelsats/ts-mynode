@@ -47,7 +47,7 @@ chmod 0700 "$STORAGE_DIR"
 ln -sfn "$INSTALL_DIR" /opt/mynode/ts-mynode
 rm -rf /tmp/mynode_tunnelsats_push
 
-APP_VER=$(jq -r '.latest_version // "v0.1.0"' "$DST/tunnelsats.json" 2>/dev/null || echo "v0.1.0")
+APP_VER=$(jq -r '.latest_version // "v1.0.0"' "$DST/tunnelsats.json" 2>/dev/null || echo "v1.0.0")
 mkdir -p /home/bitcoin/.mynode /mnt/hdd/mynode/settings
 printf '%s\n' "$APP_VER" > /home/bitcoin/.mynode/tunnelsats_version
 printf '%s\n' "$APP_VER" > /mnt/hdd/mynode/settings/tunnelsats_version

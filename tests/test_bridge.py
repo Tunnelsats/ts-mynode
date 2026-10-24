@@ -435,11 +435,14 @@ class TestBridgeMyNode(unittest.TestCase):
             "mynode-mode-tile-a",
             "mynode-mode-tile-b",
             "tunnelsats-killswitch.service",
-            "systemd-run -q -P --slice=tunnelsats.slice",
+            "tunnelsats verify --json | jq",
+            "systemd-run -q -P --slice=tunnelsats.slice curl -4 -sS",
+            "systemd-run -q -P --slice=tunnelsats.slice curl -6 -sS",
             "killswitch-pillars",
             "How do I back up or export my WireGuard configuration",
         ):
             self.assertIn(required_ui, html_text)
+        self.assertEqual(bridge.user_agent(), "TunnelSats-MyNode/1.0.0")
         for removed_redundant in (
             "btn-overview-backup",
             "btn-mynode-backup",
