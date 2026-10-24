@@ -22,7 +22,7 @@
     "download_skip": false,
     "download_type": "source",
     "download_source_url": "https://github.com/Tunnelsats/ts-mynode/archive/refs/tags/{VERSION}.tar.gz",
-    "download_source_sha256": "v1.0.0 0000000000000000000000000000000000000000000000000000000000000000",
+    "download_source_sha256": "v1.0.0 dca569bf434a05fa6ebbb505c9f820ed12f72f79b67a4216fd67063ec3f1d934",
     "download_binary_url": {},
     "install_env_vars": {},
     "supports_app_page": true,
