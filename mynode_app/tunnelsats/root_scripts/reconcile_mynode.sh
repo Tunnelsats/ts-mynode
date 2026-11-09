@@ -271,7 +271,7 @@ PY
 
 alloc_stage_tmp() {
     local stage_dir="/run/tunnelsats"
-    if [ "$(id -u)" -ne 0 ] || ! mkdir -p -m 0755 "$stage_dir" 2>/dev/null; then
+    if [ "$(id -u)" -ne 0 ] || ! install -d -m 0755 "$stage_dir" 2>/dev/null; then
         stage_dir="${TMPDIR:-/tmp}"
     fi
     mktemp "${stage_dir}/ts-reconcile.XXXXXX"
@@ -855,7 +855,7 @@ cmd_apply() {
         local ts_bin
         ts_bin="$(resolve_ts_sh_bin)"
         # Arm tunnelsats.slice + killswitch FIRST before writing hybrid clearnet settings to lnd_extra_config.conf
-        if ! "$ts_bin" install --managed mynode --impl lnd --non-interactive --yes --config "$snap_conf"; then
+        if ! "$ts_bin" install --managed mynode --impl "$TUNNELSATS_LN_IMPL" --non-interactive --yes --config "$snap_conf"; then
             rm -f "$snap_conf"
             write_reconcile_status "error" "apply" "$req_id" "tunnelsats managed install failed"
             exit 1

@@ -8157,7 +8157,7 @@ ts_m_cmd_mynode_lnd_pre() {
     mode=$(stat -c '%a' "$lnd_conf" 2>/dev/null || echo "640")
     owner=$(stat -c '%u:%g' "$lnd_conf" 2>/dev/null || echo "")
     local stage_dir="/run/tunnelsats"
-    if [[ "$EUID" -ne 0 ]] || ! mkdir -p -m 0700 "$stage_dir" 2>/dev/null; then
+    if [[ "$EUID" -ne 0 ]] || ! install -d -m 0700 "$stage_dir" 2>/dev/null; then
         stage_dir="${TMPDIR:-/tmp}"
     fi
     if ! stage_tmp=$(mktemp "${stage_dir}/mynode-lnd-conf.XXXXXX" 2>/dev/null); then

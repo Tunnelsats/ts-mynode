@@ -28,7 +28,7 @@ fi
 if id -u tunnelsats >/dev/null 2>&1; then
     install -d -o tunnelsats -g tunnelsats -m 0700 "$STORAGE_DIR"
 else
-    mkdir -p -m 0700 "$STORAGE_DIR"
+    install -d -m 0700 "$STORAGE_DIR"
 fi
 
 install -d -o root -g root -m 0755 /run/tunnelsats /etc/tunnelsats
