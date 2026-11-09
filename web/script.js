@@ -2534,7 +2534,7 @@ function renderMynodeControls(m) {
   if (tileB) tileB.classList.toggle('is-selected', secure)
   const toggleBtn = byId('btn-mynode-toggle-mode')
   if (toggleBtn) {
-    const rootLocked = Boolean(mn.rootLockedSecureMode)
+    const rootLocked = Boolean(mn.rootSecureMode || mn.rootLockedSecureMode)
     toggleBtn.disabled = rootLocked
     toggleBtn.textContent = rootLocked
       ? 'Locked by Host Root (Mode B)'

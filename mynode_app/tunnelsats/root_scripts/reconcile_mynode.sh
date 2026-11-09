@@ -145,6 +145,59 @@ PY
     return 1
 }
 
+persist_desired_state() {
+    local desired_target="$1"
+    local req_id="${2:-}"
+    local desired_dir
+    desired_dir="$(dirname "$DESIRED_STATE_FILE")"
+    if [ -z "$desired_target" ] || [ ! -d "$desired_dir" ] || [ -L "$desired_dir" ] || [ -L "$DESIRED_STATE_FILE" ]; then
+        return 0
+    fi
+    if [ "$(id -u)" -eq 0 ] && id -u tunnelsats >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
+        runuser -u tunnelsats -g tunnelsats -- python3 - "$DESIRED_STATE_FILE" "$desired_target" "$req_id" <<'PY' 2>/dev/null || true
+import datetime, json, os, secrets, sys
+dst, desired, req_id = sys.argv[1:4]
+if os.path.islink(dst):
+    sys.exit(0)
+doc = {
+    "version": 1,
+    "desired": desired,
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+}
+if req_id:
+    doc["requestId"] = req_id
+tmp = f"{dst}.tmp.{os.getpid()}.{secrets.token_hex(6)}"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+    f.write("\n")
+os.chmod(tmp, 0o600)
+os.replace(tmp, dst)
+PY
+    else
+        python3 - "$DESIRED_STATE_FILE" "$desired_target" "$req_id" <<'PY' 2>/dev/null || true
+import datetime, json, os, secrets, sys
+dst, desired, req_id = sys.argv[1:4]
+if os.path.islink(dst):
+    sys.exit(0)
+doc = {
+    "version": 1,
+    "desired": desired,
+    "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+}
+if req_id:
+    doc["requestId"] = req_id
+tmp = f"{dst}.tmp.{os.getpid()}.{secrets.token_hex(6)}"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(doc, f)
+    f.write("\n")
+os.chmod(tmp, 0o600)
+os.replace(tmp, dst)
+PY
+    fi
+}
+
 write_reconcile_status() {
     local status_str="$1"
     local action_str="$2"
@@ -174,6 +227,12 @@ with os.fdopen(fd, "w", encoding="utf-8") as f:
 os.chmod(tmp, 0o644)
 os.replace(tmp, dst)
 PY
+    if [ "$status_str" = "ok" ]; then
+        case "$action_str" in
+            apply) persist_desired_state "active" "$req_id" ;;
+            restore|uninstall) persist_desired_state "tor-only" "$req_id" ;;
+        esac
+    fi
 }
 
 refuse_if_secure_mode() {
@@ -838,8 +897,18 @@ cmd_apply() {
         rm -f "$snap_conf"
         ensure_managed_inventory_readable
 
+        if ! "$SYSTEMCTL_BIN" is-active --quiet tunnelsats-killswitch.service 2>/dev/null; then
+            if ! "$SYSTEMCTL_BIN" restart tunnelsats-killswitch.service; then
+                write_reconcile_status "error" "apply" "$req_id" "tunnelsats-killswitch.service failed to start"
+                return 1
+            fi
+        fi
+
         if [ "$wg_changed" -eq 1 ] || ! "$SYSTEMCTL_BIN" is-active --quiet wg-quick@tunnelsatsv2.service 2>/dev/null; then
-            "$SYSTEMCTL_BIN" restart wg-quick@tunnelsatsv2.service
+            if ! "$SYSTEMCTL_BIN" restart wg-quick@tunnelsatsv2.service; then
+                write_reconcile_status "error" "apply" "$req_id" "wg-quick@tunnelsatsv2.service failed to start"
+                return 1
+            fi
         fi
 
         block_insert "$EXTRACTED_VPN_DNS" "$EXTRACTED_VPN_PORT"
@@ -848,7 +917,10 @@ cmd_apply() {
                 "$MYNODE_GEN_LND_CONFIG" || true
             fi
             if "$SYSTEMCTL_BIN" is-active --quiet lnd.service 2>/dev/null; then
-                "$SYSTEMCTL_BIN" restart lnd.service
+                if ! "$SYSTEMCTL_BIN" restart lnd.service; then
+                    write_reconcile_status "error" "apply" "$req_id" "lnd.service failed to restart"
+                    return 1
+                fi
             fi
         fi
     else
@@ -868,7 +940,10 @@ cmd_apply() {
             "$MYNODE_GEN_LND_CONFIG" || true
         fi
         if "$SYSTEMCTL_BIN" is-active --quiet lnd.service 2>/dev/null; then
-            "$SYSTEMCTL_BIN" restart lnd.service
+            if ! "$SYSTEMCTL_BIN" restart lnd.service; then
+                write_reconcile_status "error" "apply" "$req_id" "lnd.service failed to restart"
+                return 1
+            fi
         fi
     fi
 
@@ -955,7 +1030,7 @@ cmd_status() {
         secure_str="true"
     fi
     local managed_str="false"
-    if [ -f "$MANAGED_INVENTORY" ] && [ ! -L "$MANAGED_INVENTORY" ]; then
+    if [ -f "$MANAGED_INVENTORY" ] && [ ! -L "$MANAGED_INVENTORY" ] && grep -Eq '"state"[[:space:]]*:[[:space:]]*"installed"' "$MANAGED_INVENTORY" 2>/dev/null; then
         managed_str="true"
     fi
     local blk_json

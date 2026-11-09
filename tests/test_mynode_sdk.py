@@ -259,6 +259,56 @@ PersistentKeepalive = 25
             self.assertEqual(res_boot.returncode, 0, res_boot.stderr)
             self.assertEqual(order_log.read_text(encoding="utf-8").strip(), "", "Expected zero restarts on converged boot-sync")
 
+            # 4. CLI restore persists desired="tor-only" so subsequent boot-sync does not re-enable VPN
+            res_rest = subprocess.run(["/bin/bash", str(reconciler), "restore"], env=env, capture_output=True, text=True)
+            self.assertEqual(res_rest.returncode, 0, res_rest.stderr)
+            desired_doc = json.loads((data_dir / "desired-state.json").read_text(encoding="utf-8"))
+            self.assertEqual(desired_doc["desired"], "tor-only")
+            self.assertNotIn("BEGIN TUNNELSATS", lnd_extra.read_text(encoding="utf-8"))
+
+            res_boot_after_restore = subprocess.run(["/bin/bash", str(reconciler), "boot-sync"], env=env, capture_output=True, text=True)
+            self.assertEqual(res_boot_after_restore.returncode, 0, res_boot_after_restore.stderr)
+            self.assertNotIn("BEGIN TUNNELSATS", lnd_extra.read_text(encoding="utf-8"))
+
+            # 5. CLI apply after restore updates desired="active" so boot-sync preserves active tunnel
+            managed_inv.unlink(missing_ok=True)
+            res_reapply = subprocess.run(["/bin/bash", str(reconciler), "apply"], env=env, capture_output=True, text=True)
+            self.assertEqual(res_reapply.returncode, 0, res_reapply.stderr)
+            self.assertEqual(json.loads((data_dir / "desired-state.json").read_text(encoding="utf-8"))["desired"], "active")
+
+            # 6. cmd_status requires state == "installed" in managed.json
+            managed_inv.write_text(json.dumps({"schema": 1, "state": "installing"}), encoding="utf-8")
+            res_st_installing = subprocess.run(["/bin/bash", str(reconciler), "status"], env=env, capture_output=True, text=True)
+            self.assertEqual(res_st_installing.returncode, 0)
+            self.assertFalse(json.loads(res_st_installing.stdout)["managed_installed"])
+
+            # 7. Fast-path apply fails closed before writing lnd_extra_config.conf when killswitch fails to start
+            lnd_extra.write_text("", encoding="utf-8")
+            managed_inv.write_text(
+                json.dumps({"schema": 1, "state": "installed", "profile": "mynode", "impl": "lnd", "unit": "lnd.service"}),
+                encoding="utf-8",
+            )
+            mock_sys_fail_ks = tmp_path / "mock_systemctl_fail_ks.sh"
+            mock_sys_fail_ks.write_text(
+                "#!/bin/bash\n"
+                "if [ \"${1:-}\" = \"is-active\" ] && [ \"${3:-}\" = \"tunnelsats-killswitch.service\" ]; then exit 3; fi\n"
+                "if [ \"${1:-}\" = \"restart\" ] && [ \"${2:-}\" = \"tunnelsats-killswitch.service\" ]; then exit 1; fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            mock_sys_fail_ks.chmod(0o755)
+            env_fail = dict(env)
+            env_fail["SYSTEMCTL_BIN"] = str(mock_sys_fail_ks)
+            res_ks_fail = subprocess.run(["/bin/bash", str(reconciler), "apply"], env=env_fail, capture_output=True, text=True)
+            self.assertNotEqual(res_ks_fail.returncode, 0)
+            self.assertNotIn("BEGIN TUNNELSATS", lnd_extra.read_text(encoding="utf-8"))
+            self.assertEqual(json.loads(status_out.read_text(encoding="utf-8"))["status"], "error")
+
+            # 8. scripts/tunnelsats.sh keeps /run/tunnelsats at 0755 (never 0700)
+            ts_sh_text = (REPO_ROOT / "scripts" / "tunnelsats.sh").read_text(encoding="utf-8")
+            self.assertNotIn('install -d -m 0700 "$stage_dir"', ts_sh_text)
+            self.assertIn('install -d -m 0755 "$stage_dir"', ts_sh_text)
+
 
 if __name__ == "__main__":
     unittest.main()

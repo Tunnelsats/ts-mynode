@@ -297,3 +297,46 @@ EOF
   [ "$status" -eq 0 ]
   [ ! -f "${TEST_TMPDIR}/systemctl_conv.log" ]
 }
+
+@test "restore persists desired-state tor-only so subsequent boot-sync does not re-enable VPN" {
+  cat > "${TUNNELSATS_CONF_PATH}" <<'EOF'
+[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.9.0.42/32
+# Server: eu1.tunnelsats.com
+# Port Forwarding: 34567
+
+[Peer]
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+Endpoint = eu1.tunnelsats.com:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+EOF
+  chmod 0600 "${TUNNELSATS_CONF_PATH}"
+
+  export TS_SH_BIN="${TEST_TMPDIR}/mock_ts_restore.sh"
+  cat > "${TS_SH_BIN}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${TS_SH_BIN}"
+
+  export SYSTEMCTL_BIN="${TEST_TMPDIR}/mock_systemctl_restore.sh"
+  cat > "${SYSTEMCTL_BIN}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${SYSTEMCTL_BIN}"
+
+  run "${RECONCILER}" apply "${TUNNELSATS_CONF_PATH}"
+  [ "$status" -eq 0 ]
+  grep -q '"desired": "active"' "${DESIRED_STATE_FILE}"
+
+  run "${RECONCILER}" restore
+  [ "$status" -eq 0 ]
+  grep -q '"desired": "tor-only"' "${DESIRED_STATE_FILE}"
+
+  run "${RECONCILER}" boot-sync
+  [ "$status" -eq 0 ]
+  ! grep -q "TUNNELSATS" "${LND_EXTRA_CONFIG}"
+}

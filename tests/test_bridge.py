@@ -5,8 +5,10 @@ import io
 import json
 import os
 import pathlib
+import socket
 import tempfile
 import unittest
+import urllib.error
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from unittest import mock
@@ -542,6 +544,11 @@ class TestBridgeMyNode(unittest.TestCase):
         marker.write_text("true\n", encoding="utf-8")
         with mock.patch.object(bridge, "SECURE_MODE_MARKER_PATH", str(marker)):
             self.assertTrue(bridge.is_secure_mode())
+            st = bridge.get_mynode_reconciler_status()
+            self.assertTrue(st["rootSecureMode"])
+            self.assertTrue(st["rootLockedSecureMode"])
+            js_text = (REPO_ROOT / "web" / "script.js").read_text(encoding="utf-8")
+            self.assertIn("mn.rootSecureMode", js_text)
             with self.assertRaises(PermissionError):
                 bridge.set_secure_mode(False)
 
@@ -577,6 +584,19 @@ class TestBridgeMyNode(unittest.TestCase):
             desired = json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))
             self.assertEqual(desired["desired"], "active")
             self.assertTrue(desired["requestId"])
+
+            # Simulate UI Restore setting desired="tor-only", followed by a paid BOLT11 claim in Mode A
+            code_rest, _ = bridge.run_mynode_reconciler("restore")
+            self.assertEqual(code_rest, 202)
+            self.assertEqual(
+                json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))["desired"],
+                "tor-only",
+            )
+            bridge.save_configuration(SAMPLE_WG_CONF, target_node="lnd", provisioned_key=SAMPLE_PUBKEY)
+            self.assertEqual(
+                json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))["desired"],
+                "active",
+            )
 
     def test_strict_origin_sec_fetch_site_cache_and_peer_uid(self):
         csrf = bridge.get_csrf_token()
@@ -680,6 +700,25 @@ class TestBridgeMyNode(unittest.TestCase):
         outcomes = bridge.process_pending_intents()
         self.assertTrue(outcomes.get("renew", "").startswith("failed:"))
         self.assertEqual(bridge.read_meta()["pendingRenewal"]["renewalId"], "ren-paid")
+
+        # Default routeViaTor=True when omitted on direct API call, False when explicit
+        good_uri = f"nostr+walletconnect://{pub_b}?relay={urllib.parse.quote('wss://relay.damus.io', safe='')}&secret={secret_a}"
+        with mock.patch.object(socket, "getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]):
+            code_def, body_def = bridge.connect_nwc_wallet({"uri": good_uri})
+            self.assertEqual(code_def, 200)
+            self.assertTrue(body_def["nwc"]["routeViaTor"])
+            code_off, body_off = bridge.connect_nwc_wallet({"uri": good_uri, "routeViaTor": False})
+            self.assertEqual(code_off, 200)
+            self.assertFalse(body_off["nwc"]["routeViaTor"])
+
+        # _fetch_servers and check_reachability must route through _NO_REDIRECT_OPENER
+        with mock.patch.object(bridge._NO_REDIRECT_OPENER, "open", side_effect=urllib.error.URLError("blocked redirect")) as mock_opener:
+            with self.assertRaises(urllib.error.URLError):
+                bridge._fetch_servers()
+            self.assertEqual(mock_opener.call_count, 1)
+            rc_code, _ = bridge.check_reachability({"nodePubkey": "02" + "aa" * 32})
+            self.assertEqual(rc_code, 502)
+            self.assertEqual(mock_opener.call_count, 2)
 
 
 def _iso_future(hours):

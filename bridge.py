@@ -586,6 +586,25 @@ def save_configuration(conf_content, target_node="lnd", clear_pending_order=None
         if paid_plan is not None:
             _record_paid_plan(meta, paid_plan)
         atomic_write_json(META_FILE_PATH, meta)
+        if DESIRED_STATE_PATH:
+            if not is_secure_mode():
+                atomic_write_json(
+                    DESIRED_STATE_PATH,
+                    {
+                        "version": 1,
+                        "desired": "active",
+                        "requestId": secrets.token_hex(12),
+                        "requestedAt": _iso(datetime.now(timezone.utc)),
+                    },
+                    mode=0o600,
+                )
+            elif os.path.exists(DESIRED_STATE_PATH) and not os.path.islink(DESIRED_STATE_PATH):
+                existing_desired = _read_json_object(DESIRED_STATE_PATH)
+                if isinstance(existing_desired, dict) and existing_desired.get("desired") == "tor-only":
+                    try:
+                        os.unlink(DESIRED_STATE_PATH)
+                    except OSError:
+                        pass
     return True
 
 def get_default_gateway():
@@ -3015,6 +3034,7 @@ def get_mynode_reconciler_status():
     return {
         "secureMode": secure,
         "rootSecureMode": root_enforced,
+        "rootLockedSecureMode": root_enforced,
         "mode": "secure" if secure else "integrated",
         "lndExtraConfigPath": LND_EXTRA_CONFIG_PATH,
         "lndExtraConfigured": block_present,
@@ -3229,7 +3249,7 @@ def connect_nwc_wallet(payload):
     duration_setting = payload.get("autoRenewDuration", "match")
     if duration_setting not in ("match", "1m", "3m", "6m", "12m"):
         return 400, {"error": "Invalid autoRenewDuration; expected 'match', '1m', '3m', '6m', or '12m'"}
-    route_via_tor = bool(payload.get("routeViaTor", False) or parsed.get("hasOnionRelay"))
+    route_via_tor = bool(payload.get("routeViaTor", True) or parsed.get("hasOnionRelay"))
     now_iso = _iso(datetime.now(timezone.utc))
     wallet_doc = {
         "uri": parsed["uri"],
@@ -4069,8 +4089,8 @@ def _fetch_servers():
         headers={"Accept": "application/json", "User-Agent": user_agent()},
         method="GET",
     )
-    with urllib.request.urlopen(req, timeout=10) as response:
-        data = json.loads(response.read(SERVERS_MAX_RESPONSE_BYTES).decode("utf-8"))
+    with _NO_REDIRECT_OPENER.open(req, timeout=10) as response:
+        data = _read_bounded_json(response, max_bytes=SERVERS_MAX_RESPONSE_BYTES)
     if not isinstance(data, dict) or not isinstance(data.get("servers"), list):
         raise ValueError("TunnelSats API returned an unexpected server list")
     servers = []
@@ -4194,8 +4214,8 @@ def check_reachability(payload):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=REACHABILITY_TIMEOUT) as response:
-            data = json.loads(response.read(REACHABILITY_MAX_RESPONSE_BYTES).decode("utf-8"))
+        with _NO_REDIRECT_OPENER.open(req, timeout=REACHABILITY_TIMEOUT) as response:
+            data = _read_bounded_json(response, max_bytes=REACHABILITY_MAX_RESPONSE_BYTES)
     except urllib.error.HTTPError as e:
         if e.code == 429:
             return 429, {"error": "The TunnelSats check service is busy. Please wait a minute.",
