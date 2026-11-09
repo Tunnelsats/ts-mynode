@@ -34,18 +34,20 @@ HANDOFF_FILE_PATH = os.path.join(DATA_DIR, "vpn-handoff.json")
 NOTICES_FILE_PATH = os.path.join(DATA_DIR, "subscription-notices.json")
 INTENTS_FILE_PATH = os.path.join(DATA_DIR, "dashboard-intents.json")
 INTENT_RESULTS_FILE_PATH = os.path.join(DATA_DIR, "dashboard-intent-results.json")
-RECONCILER_SCRIPT_PATH = (
-    os.getenv("TUNNELSATS_RECONCILER_PATH")
-    or os.path.join(REPO_ROOT, "scripts", "reconcile_mynode.sh")
-)
+DESIRED_STATE_PATH = os.path.join(DATA_DIR, "desired-state.json")
+RECONCILER_SCRIPT_PATH = os.getenv("TUNNELSATS_RECONCILER_PATH") or ""
 TUNNELSATS_SH_PATH = (
     os.getenv("TUNNELSATS_SH_PATH")
-    or os.path.join(REPO_ROOT, "scripts", "tunnelsats.sh")
+    or "/usr/local/sbin/tunnelsats"
 )
 LND_EXTRA_CONFIG_PATH = (
     os.getenv("MYNODE_LND_EXTRA_CONF")
     or "/mnt/hdd/mynode/settings/lnd_extra_config.conf"
 )
+SECURE_MODE_MARKER_PATH = os.getenv("TUNNELSATS_SECURE_MODE_FILE") or "/etc/tunnelsats/secure_mode"
+RECONCILE_STATUS_PATH = os.getenv("TUNNELSATS_RECONCILE_STATUS_FILE") or "/run/tunnelsats/reconcile-status.json"
+DESIRED_STATE_WAIT_SECONDS = 2.0
+_reconciler_lock = threading.Lock()
 _intent_wake_event = threading.Event()
 
 
@@ -53,7 +55,7 @@ def configure_paths(data_dir, lnd_extra_conf=None, reconciler_path=None, tunnels
     """Updates module-level file paths (used by tests and custom deployments)."""
     global DATA_DIR, CONFIG_PATH, APP_CONFIG_PATH, META_FILE_PATH, NWC_WALLET_FILE_PATH
     global HANDOFF_FILE_PATH, NOTICES_FILE_PATH, INTENTS_FILE_PATH, INTENT_RESULTS_FILE_PATH
-    global LND_EXTRA_CONFIG_PATH, RECONCILER_SCRIPT_PATH, TUNNELSATS_SH_PATH
+    global DESIRED_STATE_PATH, LND_EXTRA_CONFIG_PATH, RECONCILER_SCRIPT_PATH, TUNNELSATS_SH_PATH
     global _enabled_cache, _enabled_cache_mtime, _pubkey_cache
     DATA_DIR = str(data_dir)
     CONFIG_PATH = os.path.join(DATA_DIR, "tunnelsatsv2.conf")
@@ -64,6 +66,7 @@ def configure_paths(data_dir, lnd_extra_conf=None, reconciler_path=None, tunnels
     NOTICES_FILE_PATH = os.path.join(DATA_DIR, "subscription-notices.json")
     INTENTS_FILE_PATH = os.path.join(DATA_DIR, "dashboard-intents.json")
     INTENT_RESULTS_FILE_PATH = os.path.join(DATA_DIR, "dashboard-intent-results.json")
+    DESIRED_STATE_PATH = os.path.join(DATA_DIR, "desired-state.json")
     if lnd_extra_conf is not None:
         LND_EXTRA_CONFIG_PATH = str(lnd_extra_conf)
     if reconciler_path is not None:
@@ -141,14 +144,17 @@ def is_valid_iso_expiry(expiry_str):
         return False
 
 def atomic_write_json(filepath, data, mode=0o600):
+    if os.path.islink(filepath):
+        raise OSError(f"Refusing to write through symlink: {filepath}")
     parent = os.path.dirname(filepath)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp_path = filepath + ".tmp"
+    tmp_path = f"{filepath}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         content = json.dumps(data, indent=2)
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-        with os.fdopen(fd, 'w') as f:
+        fd = os.open(tmp_path, flags, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, filepath)
         try:
@@ -164,13 +170,16 @@ def atomic_write_json(filepath, data, mode=0o600):
         raise e
 
 def atomic_write_file(filepath, content, mode=0o600):
+    if os.path.islink(filepath):
+        raise OSError(f"Refusing to write through symlink: {filepath}")
     parent = os.path.dirname(filepath)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    tmp_path = filepath + ".tmp"
+    tmp_path = f"{filepath}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-        with os.fdopen(fd, 'w') as f:
+        fd = os.open(tmp_path, flags, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, filepath)
         try:
@@ -284,17 +293,226 @@ def read_meta():
     except (OSError, ValueError):
         return {}
 
-def validate_config(wg_conf):
-    if not wg_conf:
+_WG_ALLOWED_INTERFACE_KEYS = frozenset({"privatekey", "address", "dns", "mtu"})
+_WG_ALLOWED_PEER_KEYS = frozenset({"publickey", "presharedkey", "endpoint", "allowedips", "persistentkeepalive"})
+_WG_FORBIDDEN_HOOK_KEYS = frozenset({"preup", "postup", "predown", "postdown", "saveconfig", "table", "fwmark", "listenport"})
+
+
+def parse_and_canonicalize_wg_config(wg_conf):
+    """Validates a WireGuard configuration against a strict positive key allowlist
+    and returns a canonicalized .conf string with zero wg-quick hook directives."""
+    if not isinstance(wg_conf, str) or not wg_conf.strip():
         raise ValueError("Configuration content is empty.")
-    if not re.search(r'^\s*(?!#|;)\s*PrivateKey\s*=', wg_conf, re.IGNORECASE | re.MULTILINE):
+    if len(wg_conf) > 16384 or "\x00" in wg_conf:
+        raise ValueError("Configuration content is oversized or contains invalid bytes.")
+
+    key_re = re.compile(r"^[A-Za-z0-9+/]{43}=\Z")
+    host_re = re.compile(
+        r"^(?=.{1,253}\Z)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+        r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\Z"
+    )
+
+    section = None
+    seen_sections = set()
+    iface = {}
+    peer = {}
+    vpn_port = None
+    server_comment = None
+    mypubkey_comment = None
+    valid_until_comment = None
+
+    for raw_line in wg_conf.splitlines():
+        line = raw_line.rstrip("\r")
+        if m_port := re.match(r"^\s*#\s*(?:VPNPort|Port Forwarding):\s*([0-9]{1,5})\s*\Z", line, re.IGNORECASE):
+            p = int(m_port.group(1))
+            if not (1 <= p <= 65535):
+                raise ValueError("Invalid port-forwarding metadata value.")
+            vpn_port = p
+            continue
+        if m_srv := re.match(r"^\s*#\s*Server:\s*([A-Za-z0-9.-]+)\s*\Z", line, re.IGNORECASE):
+            server_comment = m_srv.group(1)
+            continue
+        if m_pub := re.match(r"^\s*#\s*myPubKey:\s*([A-Za-z0-9+/=]+)\s*\Z", line, re.IGNORECASE):
+            if key_re.fullmatch(m_pub.group(1)):
+                mypubkey_comment = m_pub.group(1)
+            continue
+        if m_exp := re.match(r"^\s*#\s*Valid Until:\s*(.+?)\s*\Z", line, re.IGNORECASE):
+            exp_val = m_exp.group(1).strip()
+            if is_valid_iso_expiry(exp_val) and "\n" not in exp_val and "\r" not in exp_val:
+                valid_until_comment = exp_val
+            continue
+
+        trimmed = line.strip()
+        if not trimmed:
+            continue
+        if trimmed.lower().startswith(("#tunnelsats-managed", "#tunnelsats-setup")):
+            break
+        if trimmed.startswith("#") or trimmed.startswith(";"):
+            continue
+
+        m_sec = re.match(r"^\[([A-Za-z0-9_-]+)\]\Z", trimmed)
+        if m_sec:
+            sec_name = m_sec.group(1).lower()
+            if sec_name not in ("interface", "peer"):
+                raise ValueError(f"Unsupported WireGuard section '[{m_sec.group(1)}]'.")
+            if sec_name in seen_sections:
+                raise ValueError(f"Duplicate WireGuard section '[{m_sec.group(1)}]'.")
+            seen_sections.add(sec_name)
+            section = sec_name
+            continue
+
+        if section is None or "=" not in trimmed:
+            raise ValueError("Malformed line or directive outside [Interface]/[Peer] section.")
+
+        raw_k, _, raw_v = trimmed.partition("=")
+        k = raw_k.strip().lower()
+        v = raw_v.split("#", 1)[0].strip()
+
+        if k in _WG_FORBIDDEN_HOOK_KEYS:
+            raise ValueError(f"Forbidden WireGuard directive '{raw_k.strip()}' is not allowed.")
+        if section == "interface":
+            if k not in _WG_ALLOWED_INTERFACE_KEYS:
+                raise ValueError(f"Unsupported [Interface] directive '{raw_k.strip()}'.")
+            iface[k] = v
+        else:
+            if k not in _WG_ALLOWED_PEER_KEYS:
+                raise ValueError(f"Unsupported [Peer] directive '{raw_k.strip()}'.")
+            peer[k] = v
+
+    if "privatekey" not in iface:
         raise ValueError("Missing 'PrivateKey' property.")
-    if not re.search(r'^\s*(?!#|;)\s*Address\s*=', wg_conf, re.IGNORECASE | re.MULTILINE):
+    if "address" not in iface:
         raise ValueError("Missing 'Address' property.")
-    if not re.search(r'^\s*(?!#|;)\s*Endpoint\s*=', wg_conf, re.IGNORECASE | re.MULTILINE):
+    if "endpoint" not in peer:
         raise ValueError("Missing 'Endpoint' routing property.")
-    if not re.search(r'#\s*(?:VPNPort|Port Forwarding):\s*\d+', wg_conf, re.IGNORECASE):
+    if vpn_port is None:
         raise ValueError("Missing port-forwarding metadata (e.g., # Port Forwarding: XXXXX).")
+    if "publickey" not in peer:
+        raise ValueError("Missing '[Peer] PublicKey' property.")
+
+    priv = iface["privatekey"]
+    pub = peer["publickey"]
+    psk = peer.get("presharedkey")
+    if not key_re.fullmatch(priv):
+        raise ValueError("Invalid WireGuard PrivateKey format.")
+    if not key_re.fullmatch(pub):
+        raise ValueError("Invalid WireGuard PublicKey format.")
+    if psk is not None and psk != "" and not key_re.fullmatch(psk):
+        raise ValueError("Invalid WireGuard PresharedKey format.")
+
+    norm_addrs = []
+    for part in iface["address"].split(","):
+        part = part.strip()
+        if not part or "%" in part:
+            raise ValueError("Invalid 'Address' property.")
+        ip_if = ipaddress.ip_interface(part)
+        if getattr(ip_if, "scope_id", None) is not None:
+            raise ValueError("IPv6 scope_id is not allowed in 'Address'.")
+        norm_addrs.append(str(ip_if))
+    if not norm_addrs:
+        raise ValueError("Missing 'Address' property.")
+
+    mtu_str = None
+    if iface.get("mtu"):
+        if not iface["mtu"].isdigit() or not (1280 <= int(iface["mtu"]) <= 1500):
+            raise ValueError("Invalid 'MTU' property (expected 1280..1500).")
+        mtu_str = str(int(iface["mtu"]))
+
+    dns_str = None
+    if iface.get("dns"):
+        norm_dns = []
+        for dpart in iface["dns"].split(","):
+            dpart = dpart.strip()
+            if not dpart or "%" in dpart:
+                raise ValueError("Invalid 'DNS' property.")
+            try:
+                norm_dns.append(str(ipaddress.ip_address(dpart)))
+            except ValueError:
+                if not host_re.fullmatch(dpart):
+                    raise ValueError("Invalid 'DNS' property.")
+                norm_dns.append(dpart)
+        dns_str = ", ".join(norm_dns)
+
+    endpoint = peer["endpoint"]
+    if endpoint.startswith("["):
+        m_ep6 = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:([0-9]{1,5})", endpoint)
+        if not m_ep6:
+            raise ValueError("Invalid IPv6 'Endpoint' property.")
+        ipaddress.IPv6Address(m_ep6.group(1))
+        ep_host = m_ep6.group(1)
+        ep_port = int(m_ep6.group(2))
+        endpoint_norm = f"[{ep_host}]:{ep_port}"
+    else:
+        if endpoint.count(":") != 1:
+            raise ValueError("Invalid 'Endpoint' property.")
+        h_part, _, p_part = endpoint.partition(":")
+        if not p_part.isdigit():
+            raise ValueError("Invalid 'Endpoint' port.")
+        ep_port = int(p_part)
+        try:
+            ipaddress.IPv4Address(h_part)
+            ep_host = h_part
+        except ValueError:
+            if not host_re.fullmatch(h_part):
+                raise ValueError("Invalid 'Endpoint' host.")
+            ep_host = h_part
+        endpoint_norm = f"{ep_host}:{ep_port}"
+    if not (1 <= ep_port <= 65535):
+        raise ValueError("Invalid 'Endpoint' port.")
+
+    srv_host = server_comment or ep_host
+    try:
+        ipaddress.ip_address(srv_host)
+    except ValueError:
+        if not host_re.fullmatch(srv_host):
+            raise ValueError("Invalid '# Server' metadata hostname.")
+
+    raw_allowed = peer.get("allowedips") or "0.0.0.0/0, ::/0"
+    norm_allowed = []
+    for npart in raw_allowed.split(","):
+        npart = npart.strip()
+        if not npart or "%" in npart:
+            raise ValueError("Invalid 'AllowedIPs' property.")
+        net = ipaddress.ip_network(npart, strict=False)
+        norm_allowed.append(str(net))
+    if not norm_allowed:
+        raise ValueError("Invalid 'AllowedIPs' property.")
+
+    keepalive = "25"
+    if peer.get("persistentkeepalive"):
+        ka = peer["persistentkeepalive"]
+        if not ka.isdigit() or not (0 <= int(ka) <= 65535):
+            raise ValueError("Invalid 'PersistentKeepalive' property.")
+        keepalive = str(int(ka))
+
+    lines = [
+        "[Interface]",
+        f"PrivateKey = {priv}",
+        f"Address = {', '.join(norm_addrs)}",
+    ]
+    if dns_str:
+        lines.append(f"DNS = {dns_str}")
+    if mtu_str:
+        lines.append(f"MTU = {mtu_str}")
+    lines.append(f"# Server: {srv_host}")
+    lines.append(f"# Port Forwarding: {vpn_port}")
+    if mypubkey_comment:
+        lines.append(f"# myPubKey: {mypubkey_comment}")
+    if valid_until_comment:
+        lines.append(f"# Valid Until: {valid_until_comment}")
+    lines.append("")
+    lines.append("[Peer]")
+    lines.append(f"PublicKey = {pub}")
+    if psk:
+        lines.append(f"PresharedKey = {psk}")
+    lines.append(f"Endpoint = {endpoint_norm}")
+    lines.append(f"AllowedIPs = {', '.join(norm_allowed)}")
+    lines.append(f"PersistentKeepalive = {keepalive}")
+    return "\n".join(lines) + "\n"
+
+
+def validate_config(wg_conf):
+    parse_and_canonicalize_wg_config(wg_conf)
 
 TARGET_NODES = ("lnd", "cln", "eclair")
 
@@ -326,7 +544,7 @@ def save_configuration(conf_content, target_node="lnd", clear_pending_order=None
     with a save. No caller holds meta_lock (flock is not reentrant)."""
     if target_node not in TARGET_NODES:
         target_node = "lnd"
-    validate_config(conf_content)
+    conf_content = parse_and_canonicalize_wg_config(conf_content)
 
     # The comment's expiry is a hint only; the confirmed expiry comes from
     # lazy_sync. Port and server stay as display hints.
@@ -561,6 +779,22 @@ class _KeyNotFound(Exception):
     """The status endpoint answered that it has no subscription for the key."""
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "Redirects are not permitted", headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler())
+MAX_UPSTREAM_JSON_BYTES = 65536
+
+
+def _read_bounded_json(stream, max_bytes=MAX_UPSTREAM_JSON_BYTES):
+    raw = stream.read(max_bytes + 1)
+    if len(raw) > max_bytes:
+        raise ValueError("Upstream API response exceeded maximum size")
+    return json.loads(raw.decode("utf-8"))
+
+
 def _is_not_found_answer(http_error):
     """True only for the status endpoint's own "no subscription for this key"
     answer: HTTP 404 with the ERR_RESOURCE_NOT_FOUND code. A 404 from a
@@ -569,7 +803,7 @@ def _is_not_found_answer(http_error):
     if http_error.code != 404:
         return False
     try:
-        body = json.loads(http_error.read().decode("utf-8"))
+        body = _read_bounded_json(http_error)
     except Exception:
         return False
     return isinstance(body, dict) and body.get("error") == STATUS_NOT_FOUND_CODE
@@ -628,8 +862,8 @@ def lazy_sync(wg_pubkey, require_usage=False):
         response_data = None
         for attempt in range(5):
             try:
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    response_data = json.loads(response.read().decode("utf-8"))
+                with _NO_REDIRECT_OPENER.open(req, timeout=10) as response:
+                    response_data = _read_bounded_json(response)
                     break
             except urllib.error.HTTPError as e:
                 if _is_not_found_answer(e):
@@ -931,10 +1165,10 @@ PAY_TASK_REPLAY_PREFIX = {"order": "tunnelsats-order", "renewal": "tunnelsats-re
 PENDING_TTL = timedelta(hours=24)
 SETTLE_RETRY_DELAY = timedelta(minutes=5)
 DEFAULT_ALLOWED_IPS = "0.0.0.0/0, ::/0"
-_WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+_WG_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=\Z")
 _HOSTNAME_RE = re.compile(
-    r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
+    r"^(?=.{1,253}\Z)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\Z"
 )
 
 
@@ -1002,13 +1236,13 @@ def _api_call(method, path, body=None):
         method=method,
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as response:
+        with _NO_REDIRECT_OPENER.open(req, timeout=15) as response:
             status = response.status
-            payload = json.loads(response.read().decode("utf-8"))
+            payload = _read_bounded_json(response)
     except urllib.error.HTTPError as e:
         message = ""
         try:
-            err = json.loads(e.read().decode("utf-8"))
+            err = _read_bounded_json(e)
             message = str(err.get("message") or err.get("error") or "")
         except Exception:
             pass
@@ -1120,24 +1354,30 @@ def generate_wg_keypair():
 
 
 def _require_key(value, label):
-    if not isinstance(value, str) or not _WG_KEY_RE.match(value):
+    if not isinstance(value, str) or not _WG_KEY_RE.fullmatch(value):
         raise SettlementError(f"The claim has no valid {label}")
     return value
 
 
 def _require_endpoint(value):
-    if isinstance(value, str) and value.count(":") == 1:
+    if isinstance(value, str) and not any(c in value for c in ("\r", "\n", "\x00", "%")) and value.count(":") == 1:
         host, _, port = value.partition(":")
-        if _HOSTNAME_RE.match(host) and port.isdigit() and 1 <= int(port) <= 65535:
-            return value
+        if _HOSTNAME_RE.fullmatch(host) and port.isdigit() and 1 <= int(port) <= 65535:
+            return f"{host}:{int(port)}"
     raise SettlementError("The claim has no valid endpoint")
 
 
 def _require_address(value):
     try:
-        if isinstance(value, str) and value == value.strip():
-            ipaddress.ip_interface(value)
-            return value
+        if (
+            isinstance(value, str)
+            and value == value.strip()
+            and value
+            and not any(c in value for c in ("\r", "\n", "\x00", "%"))
+        ):
+            iface = ipaddress.ip_interface(value)
+            if getattr(iface, "scope_id", None) is None:
+                return str(iface)
     except ValueError:
         pass
     raise SettlementError("The claim has no valid address")
@@ -1147,11 +1387,16 @@ def _require_allowed_ips(value):
     if value is None:
         return DEFAULT_ALLOWED_IPS
     try:
-        if isinstance(value, str):
-            networks = [part.strip() for part in value.split(",")]
-            for network in networks:
-                ipaddress.ip_network(network, strict=False)
-            return ", ".join(networks)
+        if isinstance(value, str) and not any(c in value for c in ("\r", "\n", "\x00", "%")):
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+            if parts:
+                parsed = []
+                for network in parts:
+                    if "%" in network:
+                        raise ValueError("scope_id forbidden")
+                    net = ipaddress.ip_network(network, strict=False)
+                    parsed.append(str(net))
+                return ", ".join(parsed)
     except ValueError:
         pass
     raise SettlementError("The claim has no valid allowedIPs")
@@ -1927,6 +2172,61 @@ import email.utils
 import hashlib
 
 
+def _should_enforce_loopback_peer_uid():
+    env_flag = os.getenv("TUNNELSATS_ENFORCE_PEER_UID", "").strip().lower()
+    if env_flag in ("1", "true", "yes"):
+        return True
+    if env_flag in ("0", "false", "no"):
+        return False
+    if not sys.platform.startswith("linux") or not os.path.exists("/proc/net/tcp"):
+        return False
+    try:
+        import pwd
+        return pwd.getpwuid(os.geteuid()).pw_name == "tunnelsats"
+    except Exception:
+        return False
+
+
+def _allowed_loopback_peer_uids():
+    allowed = {0, os.geteuid()}
+    try:
+        import pwd
+        allowed.add(pwd.getpwnam("www-data").pw_uid)
+    except Exception:
+        pass
+    return frozenset(allowed)
+
+
+def _lookup_loopback_peer_uid(client_ip, client_port, server_port=18739):
+    """Looks up the kernel-authenticated UID of an active loopback TCP connection
+    (client_ip:client_port -> 127.0.0.1:server_port) via /proc/net/tcp."""
+    if not isinstance(client_port, int) or client_port <= 0:
+        return None
+    if client_ip == "127.0.0.1":
+        local_hex = f"0100007F:{client_port:04X}"
+        rem_hex = f"0100007F:{int(server_port):04X}"
+        proc_files = ("/proc/net/tcp",)
+    elif client_ip == "::1":
+        local_hex = f"00000000000000000000000001000000:{client_port:04X}"
+        rem_hex = f"00000000000000000000000001000000:{int(server_port):04X}"
+        proc_files = ("/proc/net/tcp6",)
+    else:
+        return None
+
+    for pfile in proc_files:
+        try:
+            with open(pfile, "r", encoding="utf-8") as f:
+                for idx, line in enumerate(f):
+                    if idx == 0:
+                        continue
+                    cols = line.split()
+                    if len(cols) >= 8 and cols[1].upper() == local_hex and cols[2].upper() == rem_hex and cols[3] == "01":
+                        return int(cols[7])
+        except Exception:
+            continue
+    return None
+
+
 class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
     timeout = 10
 
@@ -1935,12 +2235,14 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
         self.send_header("Content-Security-Policy", DASHBOARD_CSP)
         self.send_header("Referrer-Policy", "no-referrer")
         super().end_headers()
 
     def is_trusted_request(self):
         client_ip = self.client_address[0]
+        client_port = self.client_address[1] if len(self.client_address) > 1 else 0
         if client_ip.startswith("::ffff:"):
             client_ip = client_ip[7:]
         is_local = client_ip in ("127.0.0.1", "::1", "localhost")
@@ -1952,7 +2254,14 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error(403, "Access denied")
             return False
 
-        host_header = self.headers.get("Host", "").lower()
+        if is_local and _should_enforce_loopback_peer_uid():
+            srv_port = getattr(getattr(self, "server", None), "server_port", 18739)
+            peer_uid = _lookup_loopback_peer_uid(client_ip, client_port, srv_port)
+            if peer_uid is None or peer_uid not in _allowed_loopback_peer_uids():
+                self.send_error(403, "Access denied")
+                return False
+
+        host_header = self.headers.get("Host", "").strip().lower()
         if host_header.startswith('['):
             host_name = host_header.partition(']')[0] + ']'
         else:
@@ -1977,27 +2286,24 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error(403, "Access denied")
             return False
 
-        # Validate Origin header if present
+        # Validate Origin header strictly against Host (exact host:port match)
         origin = self.headers.get("Origin")
         if origin:
             try:
                 parsed_origin = urllib.parse.urlsplit(origin.strip())
-                origin_host = (parsed_origin.hostname or "").lower()
-                if parsed_origin.scheme.lower() not in ("http", "https") or not origin_host:
+                origin_scheme = parsed_origin.scheme.lower()
+                origin_netloc = (parsed_origin.netloc or "").lower()
+                if origin_scheme not in ("http", "https") or not origin_netloc:
                     self.send_error(403, "Cross-origin request rejected")
                     return False
-                is_allowed_origin = (
-                    origin_host in ("localhost", "127.0.0.1", "::1", "mynode")
-                    or any(origin_host.endswith(s) for s in (".local", ".lan", ".onion"))
-                )
-                if not is_allowed_origin:
-                    try:
-                        addr = ipaddress.ip_address(origin_host)
-                        is_allowed_origin = addr.is_private or addr.is_loopback
-                    except ValueError:
-                        is_allowed_origin = False
-
-                if not is_allowed_origin:
+                # Normalize default ports if omitted on one side
+                def _strip_default_port(netloc_val, scheme_val):
+                    if scheme_val == "http" and netloc_val.endswith(":80"):
+                        return netloc_val[:-3]
+                    if scheme_val == "https" and netloc_val.endswith(":443"):
+                        return netloc_val[:-4]
+                    return netloc_val
+                if _strip_default_port(origin_netloc, origin_scheme) != _strip_default_port(host_header, origin_scheme):
                     self.send_error(403, "Cross-origin request rejected")
                     return False
             except Exception:
@@ -2020,9 +2326,9 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(403, "Invalid or missing CSRF token")
                 return False
 
-            fetch_site = self.headers.get("Sec-Fetch-Site", "").lower()
-            if fetch_site == "cross-site":
-                self.send_error(403, "Cross-site request rejected")
+            fetch_site = self.headers.get("Sec-Fetch-Site", "").strip().lower()
+            if fetch_site and fetch_site not in ("same-origin", "none"):
+                self.send_error(403, "Cross-origin request rejected")
                 return False
 
         return True
@@ -2148,8 +2454,15 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
                     csrf_tag = f'<meta name="csrf-token" content="{get_csrf_token()}">\n</head>'
                     html_content = html_content.replace("</head>", csrf_tag, 1)
                     content = html_content.encode("utf-8")
-                    content_type = "text/html; charset=utf-8"
-                    mtime_sec = max(int(st.st_mtime), _CSRF_STARTED_AT)
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "no-store, private")
+                    self.send_header("Pragma", "no-cache")
+                    self.end_headers()
+                    if send_body:
+                        self.wfile.write(content)
+                    return
                 else:
                     with open(safe_path, "rb") as f:
                         content = f.read()
@@ -2193,20 +2506,39 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
 
-    def _read_json_body(self, max_bytes):
+    def _read_json_body(self, max_bytes, allow_empty=False):
         """The request's JSON body, or None after sending a 400."""
+        if "Transfer-Encoding" in self.headers:
+            self.close_connection = True
+            self._send_json(400, {"error": "Transfer-Encoding is not supported"})
+            return None
+        get_all = getattr(self.headers, "get_all", None)
+        if callable(get_all):
+            cl_headers = get_all("Content-Length") or []
+            if len(cl_headers) > 1:
+                self.close_connection = True
+                self._send_json(400, {"error": "Duplicate Content-Length header"})
+                return None
+        raw_cl = self.headers.get("Content-Length")
+        if raw_cl is None and allow_empty:
+            return {}
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            length = int(raw_cl or "0")
         except ValueError:
+            self.close_connection = True
             self._send_json(400, {"error": "Invalid Content-Length header"})
             return None
+        if length == 0 and allow_empty:
+            return {}
         if length <= 0 or length > max_bytes:
+            self.close_connection = True
             self._send_json(400, {"error": f"Request body must be between 1 and {max_bytes} bytes"})
             return None
         try:
             raw_body = self.rfile.read(length)
             return json.loads(raw_body.decode("utf-8"))
         except (OSError, ValueError):
+            self.close_connection = True
             self._send_json(400, {"error": "Invalid JSON body"})
             return None
 
@@ -2249,8 +2581,20 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
                 return
             try:
                 result = set_secure_mode(payload["secureMode"])
+            except PermissionError as e:
+                self._send_json(
+                    403,
+                    {
+                        "error": str(e),
+                        "secureMode": True,
+                        "manualCommand": "sudo /usr/local/sbin/tunnelsats-reconcile disable-secure-mode",
+                        "mynode": get_mynode_reconciler_status(),
+                    },
+                )
+                return
             except Exception as e:
-                self._send_json(500, {"error": f"Could not update execution mode: {e}"})
+                print(f"Execution mode update failed: {e}", file=sys.stderr)
+                self._send_json(500, {"error": "Could not update execution mode"})
                 return
             self._send_json(200, result)
             return
@@ -2265,7 +2609,8 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
             try:
                 status_code, response_body = run_mynode_reconciler(action)
             except Exception as e:
-                self._send_json(500, {"error": f"Reconciler execution failed: {e}"})
+                print(f"Reconciler execution failed: {e}", file=sys.stderr)
+                self._send_json(500, {"error": "Reconciler execution failed"})
                 return
             self._send_json(status_code, response_body)
             return
@@ -2277,6 +2622,9 @@ class DashboardHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_json(status_code, response_body)
             return
         if path_only == "/api/config/export":
+            payload = self._read_json_body(1024, allow_empty=True)
+            if payload is None:
+                return
             status_code, response_body = export_wireguard_config()
             self._send_json(status_code, response_body)
             return
@@ -2566,8 +2914,19 @@ _TUNNELSATS_BLOCK_RE = re.compile(
 )
 
 
+def is_root_secure_mode():
+    """Returns True when root-enforced Secure Mode (/etc/tunnelsats/secure_mode) is active."""
+    return bool(
+        SECURE_MODE_MARKER_PATH
+        and os.path.isfile(SECURE_MODE_MARKER_PATH)
+        and not os.path.islink(SECURE_MODE_MARKER_PATH)
+    )
+
+
 def is_secure_mode():
     """Returns True when Mode B (Secure / Manual CLI Mode) is enabled, False for Mode A (Integrated Mode)."""
+    if is_root_secure_mode():
+        return True
     env_val = os.getenv("SECURE_MODE", "").strip().lower()
     if env_val in ("1", "true", "yes"):
         return True
@@ -2585,8 +2944,13 @@ def is_secure_mode():
 
 
 def set_secure_mode(enabled):
-    """Persists SECURE_MODE in config.json and tunnelsats-meta.json and returns reconciler status."""
+    """Persists SECURE_MODE preference and refuses disabling root-enforced /etc/tunnelsats/secure_mode."""
     enabled_bool = bool(enabled)
+    if not enabled_bool and is_root_secure_mode():
+        raise PermissionError(
+            "Root-enforced Secure Mode (/etc/tunnelsats/secure_mode) cannot be disabled from the web UI. "
+            "Run 'sudo /usr/local/sbin/tunnelsats-reconcile disable-secure-mode' over SSH."
+        )
     with meta_lock():
         cfg = _read_json_object(APP_CONFIG_PATH) or {}
         cfg["secure-mode"] = enabled_bool
@@ -2610,9 +2974,10 @@ def get_manual_cli_command(action="apply", vpn_host=None, vpn_port=None):
 def get_mynode_reconciler_status():
     """Returns MyNode dual-mode, managed.json inventory, and lnd_extra_config.conf reconciliation state."""
     secure = is_secure_mode()
+    root_enforced = is_root_secure_mode()
     block_present = False
     external_host = None
-    if os.path.exists(LND_EXTRA_CONFIG_PATH):
+    if os.path.exists(LND_EXTRA_CONFIG_PATH) and not os.path.islink(LND_EXTRA_CONFIG_PATH):
         try:
             with open(LND_EXTRA_CONFIG_PATH, "r", encoding="utf-8") as f:
                 extra_content = f.read()
@@ -2630,7 +2995,7 @@ def get_mynode_reconciler_status():
             pass
     server_host = None
     vpn_port = None
-    if os.path.exists(CONFIG_PATH):
+    if os.path.exists(CONFIG_PATH) and not os.path.islink(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 conf_content = f.read()
@@ -2646,8 +3011,10 @@ def get_mynode_reconciler_status():
     managed_profile = inv.get("profile") if isinstance(inv, dict) and isinstance(inv.get("profile"), str) else None
     managed_impl = inv.get("impl") if isinstance(inv, dict) and isinstance(inv.get("impl"), str) else None
     managed_unit = inv.get("unit") if isinstance(inv, dict) and isinstance(inv.get("unit"), str) else None
+    reconcile_state = _read_json_object(RECONCILE_STATUS_PATH) if RECONCILE_STATUS_PATH and os.path.exists(RECONCILE_STATUS_PATH) else None
     return {
         "secureMode": secure,
+        "rootSecureMode": root_enforced,
         "mode": "secure" if secure else "integrated",
         "lndExtraConfigPath": LND_EXTRA_CONFIG_PATH,
         "lndExtraConfigured": block_present,
@@ -2656,14 +3023,70 @@ def get_mynode_reconciler_status():
         "managedProfile": managed_profile,
         "managedImpl": managed_impl,
         "managedUnit": managed_unit,
+        "lastReconcile": reconcile_state if isinstance(reconcile_state, dict) else None,
         "manualApplyCommand": get_manual_cli_command("apply", server_host, vpn_port),
         "manualRestoreCommand": get_manual_cli_command("restore"),
         "manualStatusCommand": get_manual_cli_command("status"),
     }
 
 
+def _stage_desired_state_without_sudo(action):
+    """Stages path-free desired-state.json for root reconciliation without sudo."""
+    desired_val = "active" if action == "apply" else "tor-only"
+    req_id = secrets.token_hex(12)
+    now_iso = _iso(datetime.now(timezone.utc))
+    doc = {
+        "version": 1,
+        "desired": desired_val,
+        "requestId": req_id,
+        "requestedAt": now_iso,
+    }
+    atomic_write_json(DESIRED_STATE_PATH, doc, mode=0o600)
+
+    deadline = time.monotonic() + max(0.0, float(DESIRED_STATE_WAIT_SECONDS))
+    while time.monotonic() < deadline:
+        st_doc = _read_json_object(RECONCILE_STATUS_PATH) if RECONCILE_STATUS_PATH and os.path.exists(RECONCILE_STATUS_PATH) else None
+        if isinstance(st_doc, dict) and st_doc.get("requestId") == req_id:
+            st_val = st_doc.get("status")
+            if st_val == "ok":
+                return 200, {
+                    "status": "ok",
+                    "action": action,
+                    "returncode": 0,
+                    "requestId": req_id,
+                    "mynode": get_mynode_reconciler_status(),
+                }
+            if st_val == "blocked_secure_mode":
+                return 403, {
+                    "error": "Host reconciler refused execution because Secure Mode is active.",
+                    "secureMode": True,
+                    "manualCommand": get_manual_cli_command(action),
+                    "mynode": get_mynode_reconciler_status(),
+                }
+            return 500, {
+                "status": "error",
+                "action": action,
+                "returncode": 1,
+                "error": _dashboard_error_text(st_doc.get("error")) or "Host reconciliation failed.",
+                "mynode": get_mynode_reconciler_status(),
+            }
+        time.sleep(0.05)
+
+    return 202, {
+        "status": "staged",
+        "action": action,
+        "requestId": req_id,
+        "manualCommand": get_manual_cli_command(action),
+        "message": (
+            "Desired routing state staged. Restart TunnelSats on the MyNode Application page "
+            "or run 'sudo /usr/local/sbin/tunnelsats-reconcile sync' over SSH to apply immediately."
+        ),
+        "mynode": get_mynode_reconciler_status(),
+    }
+
+
 def run_mynode_reconciler(action="apply"):
-    """Executes scripts/reconcile_mynode.sh for 'apply', 'restore', or 'status'.
+    """Triggers MyNode host reconciliation without sudo, or runs test reconciler when configured.
     Refuses 'apply' and 'restore' with 403 when SECURE_MODE=true."""
     if action not in ("apply", "restore", "status"):
         return 400, {"error": f"Invalid reconciler action: {action}"}
@@ -2674,56 +3097,68 @@ def run_mynode_reconciler(action="apply"):
             "manualCommand": get_manual_cli_command(action),
             "mynode": get_mynode_reconciler_status(),
         }
-    env = dict(os.environ)
-    env["SECURE_MODE"] = "true" if is_secure_mode() else "false"
-    env["MYNODE_LND_EXTRA_CONF"] = LND_EXTRA_CONFIG_PATH
-    env["TUNNELSATS_SH"] = TUNNELSATS_SH_PATH
-    env["TUNNELSATS_DATA_DIR"] = DATA_DIR
-    target_impl = get_target_node()
-    env["TUNNELSATS_LN_IMPL"] = target_impl if target_impl in ("lnd", "cln") else "lnd"
+    if action == "status" and not RECONCILER_SCRIPT_PATH:
+        return 200, {
+            "status": "ok",
+            "action": "status",
+            "returncode": 0,
+            "mynode": get_mynode_reconciler_status(),
+        }
 
-    if (
-        os.geteuid() != 0
-        and os.getenv("TUNNELSATS_RECONCILER_PATH") is None
-        and os.path.exists("/usr/local/sbin/tunnelsats-reconcile")
-    ):
-        cmd = ["sudo", "-n", "/usr/local/sbin/tunnelsats-reconcile", action]
-    else:
-        cmd = [RECONCILER_SCRIPT_PATH, action]
-
-    if action == "apply":
-        if not os.path.exists(CONFIG_PATH):
-            return 409, {"error": "Cannot apply tunnel before a WireGuard configuration is installed."}
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                content = f.read()
-        except OSError as e:
-            return 500, {"error": f"Could not read WireGuard configuration: {e}"}
-        server_host = extract_server_host(content)
-        vpn_port = extract_vpn_port(content)
-        if not server_host or server_host == "Unknown":
-            return 409, {"error": "WireGuard configuration is missing a server hostname."}
-        env["VPN_EXTERNAL_HOST"] = server_host
-        env["VPN_PORT"] = str(vpn_port)
-        cmd.append(CONFIG_PATH)
-
+    if not _reconciler_lock.acquire(blocking=False):
+        return 409, {
+            "error": "Another reconciler operation is already in progress.",
+            "mynode": get_mynode_reconciler_status(),
+        }
     try:
-        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
-    except Exception as e:
-        return 500, {"error": f"Failed to execute reconciler: {e}"}
+        if action == "apply":
+            if not os.path.exists(CONFIG_PATH) or os.path.islink(CONFIG_PATH):
+                return 409, {"error": "Cannot apply tunnel before a WireGuard configuration is installed."}
+            try:
+                with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                    content = f.read()
+                validate_config(content)
+            except ValueError as e:
+                return 400, {"error": f"Invalid WireGuard configuration: {e}"}
+            except OSError:
+                return 500, {"error": "Could not read WireGuard configuration."}
+            server_host = extract_server_host(content)
+            if not server_host or server_host == "Unknown":
+                return 409, {"error": "WireGuard configuration is missing a server hostname."}
 
-    status_code = 200 if proc.returncode == 0 else 500
-    payload = {
-        "status": "ok" if proc.returncode == 0 else "error",
-        "action": action,
-        "returncode": proc.returncode,
-        "stdout": proc.stdout.strip(),
-        "stderr": proc.stderr.strip(),
-        "mynode": get_mynode_reconciler_status(),
-    }
-    if proc.returncode != 0:
-        payload["error"] = proc.stderr.strip() or proc.stdout.strip() or f"Reconciler exited with {proc.returncode}"
-    return status_code, payload
+        # Production unprivileged path: zero sudo, stage path-free desired-state.json
+        if not RECONCILER_SCRIPT_PATH and os.geteuid() != 0:
+            return _stage_desired_state_without_sudo(action)
+
+        exec_bin = RECONCILER_SCRIPT_PATH or "/usr/local/sbin/tunnelsats-reconcile"
+        env = dict(os.environ)
+        env["SECURE_MODE"] = "true" if is_secure_mode() else "false"
+        env["MYNODE_LND_EXTRA_CONF"] = LND_EXTRA_CONFIG_PATH
+        env["TUNNELSATS_SH"] = TUNNELSATS_SH_PATH
+        env["TUNNELSATS_DATA_DIR"] = DATA_DIR
+        env["TUNNELSATS_LN_IMPL"] = "lnd"
+        cmd = [exec_bin, action]
+        if action == "apply" and os.geteuid() != 0:
+            cmd.append(CONFIG_PATH)
+
+        try:
+            proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=120)
+        except Exception as e:
+            print(f"Reconciler execution error: {e}", file=sys.stderr)
+            return 500, {"error": "Failed to execute reconciler."}
+
+        status_code = 200 if proc.returncode == 0 else 500
+        payload = {
+            "status": "ok" if proc.returncode == 0 else "error",
+            "action": action,
+            "returncode": proc.returncode,
+            "mynode": get_mynode_reconciler_status(),
+        }
+        if proc.returncode != 0:
+            payload["error"] = "Reconciler returned a non-zero exit status."
+        return status_code, payload
+    finally:
+        _reconciler_lock.release()
 
 
 def import_wireguard_config(payload):
@@ -2926,6 +3361,15 @@ def process_pending_intents(now=None):
                     raise SettlementError("Cannot renew before a WireGuard configuration is installed.")
                 months = int(summary["duration"][:-1])
                 meta = read_meta()
+                existing_ren = meta.get("pendingRenewal")
+                if isinstance(existing_ren, dict):
+                    in_flight_until = _parse_iso(existing_ren.get("nwcPayInFlightUntil"))
+                    if (
+                        existing_ren.get("paidViaNwc")
+                        or existing_ren.get("paymentReceivedFor")
+                        or (in_flight_until is not None and in_flight_until > now)
+                    ):
+                        raise SettlementError("A renewal payment is already in flight or awaiting confirmation.")
                 server_id = meta.get("serverDomain") or "eu-de"
                 _st, data = _api_call(
                     "POST",
@@ -2950,12 +3394,25 @@ def process_pending_intents(now=None):
                 }
                 with meta_lock():
                     fresh_meta = read_meta()
+                    cur_ren = fresh_meta.get("pendingRenewal")
+                    if isinstance(cur_ren, dict):
+                        cur_flight = _parse_iso(cur_ren.get("nwcPayInFlightUntil"))
+                        if (
+                            cur_ren.get("paidViaNwc")
+                            or cur_ren.get("paymentReceivedFor")
+                            or (cur_flight is not None and cur_flight > now)
+                        ):
+                            raise SettlementError("A renewal payment settled while creating the invoice.")
                     fresh_meta["pendingRenewal"] = new_renewal
                     atomic_write_json(META_FILE_PATH, fresh_meta)
             elif kind == "reset":
                 wg_pubkey = _current_configured_pubkey()
                 if not wg_pubkey:
                     raise SettlementError("Cannot reset bandwidth before a WireGuard configuration is installed.")
+                meta_chk = read_meta()
+                existing_rst = meta_chk.get("pendingReset")
+                if isinstance(existing_rst, dict) and existing_rst.get("paymentReceivedFor"):
+                    raise SettlementError("A bandwidth reset payment is already awaiting confirmation.")
                 _st, data = _api_call(
                     "POST",
                     "/subscription/reset",
@@ -2976,6 +3433,9 @@ def process_pending_intents(now=None):
                 }
                 with meta_lock():
                     fresh_meta = read_meta()
+                    cur_rst = fresh_meta.get("pendingReset")
+                    if isinstance(cur_rst, dict) and cur_rst.get("paymentReceivedFor"):
+                        raise SettlementError("A bandwidth reset payment settled while creating the invoice.")
                     fresh_meta["pendingReset"] = new_reset
                     atomic_write_json(META_FILE_PATH, fresh_meta)
             _write_intent_result(kind, intent_id, "succeeded", now=now)
@@ -3034,7 +3494,7 @@ def get_status():
         "subscription_linked": sub_info["linked"],
         "expires_at": sub_info["expiresAt"] or "Unknown",
         "days_remaining": sub_info["daysRemaining"],
-        "expiry_formatted": sub_info["formatted"],
+        "expiry_formatted": _dashboard_error_text(sub_info["formatted"]) or "Unknown",
         "vpn_ip": vpn_ip or "None",
         "vpn_port": vpn_port,
         "public_ip": server_domain,
@@ -3042,7 +3502,7 @@ def get_status():
         "internal_octet": internal_octet,
         "pubkey": current_pubkey if has_config else "None",
         "last_sync": sub_info["lastSync"],
-        "sync_error": sub_info.get("syncError"),
+        "sync_error": _dashboard_error_text(sub_info.get("syncError")),
         "key_unknown": bool(sub_info.get("keyUnknown")),
         "bandwidth_used_gb": sub_info.get("bandwidthUsedGb", 0.0),
         "bandwidth_limit_gb": confirmed_bandwidth_limit(read_meta(), current_pubkey),
@@ -3563,9 +4023,9 @@ REACHABILITY_TIMEOUT = 30
 REACHABILITY_MAX_BODY_BYTES = 512
 REACHABILITY_MAX_RESPONSE_BYTES = 16 * 1024
 REACHABILITY_MAX_LATENCY_MS = 600_000
-_NODE_PUBKEY_RE = re.compile(r"^0[23][0-9a-f]{64}$")
-_TUNNELSATS_HOST_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+tunnelsats\.com$")
-_SERVER_STATUS_RE = re.compile(r"^[a-z_-]{1,16}$")
+_NODE_PUBKEY_RE = re.compile(r"^0[23][0-9a-f]{64}\Z")
+_TUNNELSATS_HOST_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+tunnelsats\.com\Z")
+_SERVER_STATUS_RE = re.compile(r"^[a-z_-]{1,16}\Z")
 
 _servers_lock = threading.Lock()
 _servers_fetch_lock = threading.Lock()
@@ -3908,7 +4368,7 @@ def _nwc_max_renewal_sats(duration_months, last_amount_sats=None, last_duration_
         return min(duration_cap, max(math.ceil(scaled_last * 2.5), floor_sats))
     return duration_cap
 
-_NWC_PUBKEY_RE = re.compile(r"^[0-9a-f]{64}$")
+_NWC_PUBKEY_RE = re.compile(r"^[0-9a-f]{64}\Z")
 _NWC_PERMANENT_ERROR_CODES = frozenset({
     "QUOTA_EXCEEDED",
     "INSUFFICIENT_BALANCE",
@@ -3945,6 +4405,24 @@ def _redact_nwc_secrets(text, secret=None):
     return cleaned[:240]
 
 
+def _is_disallowed_relay_ip(ip_obj):
+    return not bool(getattr(ip_obj, "is_global", False))
+
+
+def _validate_public_relay_hostname(hostname):
+    if not hostname or "%" in hostname:
+        raise ValueError("Invalid relay URL in NWC Connection URI.")
+    lower_host = hostname.lower().rstrip(".")
+    if lower_host in ("localhost",) or lower_host.endswith((".local", ".lan", ".internal", ".home.arpa", ".localhost")):
+        raise ValueError(f"Private or local relay hostname ({hostname}) is not permitted; use a public wss:// relay or .onion hidden service.")
+    try:
+        ip_obj = ipaddress.ip_address(lower_host)
+    except ValueError:
+        return
+    if _is_disallowed_relay_ip(ip_obj):
+        raise ValueError(f"Private, loopback, or reserved relay IP ({hostname}) is not permitted.")
+
+
 def parse_nwc_uri(raw_input):
     """Validates a nostr+walletconnect:// URI and returns its parsed fields.
     Raises ValueError with a secret-free message on invalid input."""
@@ -3961,7 +4439,7 @@ def parse_nwc_uri(raw_input):
 
     pubkey_part, sep, query_part = rest.partition("?")
     wallet_pubkey = pubkey_part.strip().rstrip("/").lower()
-    if not _NWC_PUBKEY_RE.match(wallet_pubkey):
+    if not _NWC_PUBKEY_RE.fullmatch(wallet_pubkey):
         raise ValueError("NWC Connection URI must contain a 64-character hex wallet pubkey.")
     if not sep or not query_part:
         raise ValueError("NWC Connection URI is missing query parameters (?relay=...&secret=...).")
@@ -3987,6 +4465,8 @@ def parse_nwc_uri(raw_input):
                 raise ValueError(f"Plaintext ws:// relay ({hostname}) is only allowed for .onion hidden services.")
         elif scheme != "wss":
             raise ValueError(f"Relay URL ({hostname}) must use wss:// (or ws:// for .onion).")
+        if not is_onion:
+            _validate_public_relay_hostname(hostname)
         try:
             port = parsed_relay.port
         except ValueError:
@@ -4009,7 +4489,7 @@ def parse_nwc_uri(raw_input):
     if not secrets_list:
         raise ValueError("NWC Connection URI is missing the secret= parameter.")
     secret = secrets_list[0]
-    if not _NWC_PUBKEY_RE.match(secret):
+    if not _NWC_PUBKEY_RE.fullmatch(secret):
         raise ValueError("NWC Connection URI secret must be a 64-character hex string.")
 
     relay_query = "&".join(f"relay={quote(r, safe='')}" for r in relays)
@@ -4602,10 +5082,38 @@ def _ws_open(relay_url, route_via_tor=False, timeout=15):
         raw_sock = _connect_socks5h(hostname, port, timeout=timeout)
     else:
         try:
-            raw_sock = socket.create_connection((hostname, port), timeout=timeout)
-            raw_sock.settimeout(timeout)
-        except Exception as e:
-            raise NwcError(f"Could not connect to NWC relay {hostname}: {e}")
+            _validate_public_relay_hostname(hostname)
+            infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except ValueError as e:
+            raise NwcError(str(e), permanent=True)
+        except Exception:
+            raise NwcError(f"Could not resolve NWC relay {hostname}")
+        verified_addrs = []
+        for family, socktype, proto, _canon, sockaddr in infos:
+            try:
+                ip_obj = ipaddress.ip_address(sockaddr[0])
+            except ValueError:
+                raise NwcError(f"Invalid resolved address for NWC relay {hostname}", permanent=True)
+            if _is_disallowed_relay_ip(ip_obj):
+                raise NwcError(f"Refusing NWC relay {hostname} resolving to non-global IP", permanent=True)
+            verified_addrs.append((family, socktype, proto, sockaddr))
+        if not verified_addrs:
+            raise NwcError(f"Could not resolve NWC relay {hostname}")
+        raw_sock = None
+        for family, socktype, proto, sockaddr in verified_addrs:
+            try:
+                s = socket.socket(family, socktype, proto)
+                s.settimeout(timeout)
+                s.connect(sockaddr)
+                raw_sock = s
+                break
+            except Exception:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+        if raw_sock is None:
+            raise NwcError(f"Could not connect to NWC relay {hostname}")
 
     sock = raw_sock
     try:
