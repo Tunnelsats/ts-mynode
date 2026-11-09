@@ -1584,7 +1584,7 @@ sanitize_wireguard_config() {
         in_peer && (trimmed ~ /^\[interface\]/) { in_secondary=1; next }
         in_secondary && (trimmed ~ /^\[/) { in_secondary=0 }
         in_secondary { next }
-        trimmed ~ /^(preup|postup|predown|postdown|fwmark|table)[[:space:]]*=/ { next }
+        trimmed ~ /^(preup|postup|predown|postdown|fwmark|table|saveconfig|listenport)[[:space:]]*=/ { next }
         { print raw }
     ' "$input_file")
 
@@ -8156,7 +8156,14 @@ ts_m_cmd_mynode_lnd_pre() {
 
     mode=$(stat -c '%a' "$lnd_conf" 2>/dev/null || echo "640")
     owner=$(stat -c '%u:%g' "$lnd_conf" 2>/dev/null || echo "")
-    tmp="${lnd_conf}.tunnelsats.tmp.$$"
+    local stage_dir="/run/tunnelsats"
+    if [[ "$EUID" -ne 0 ]] || ! mkdir -p -m 0700 "$stage_dir" 2>/dev/null; then
+        stage_dir="${TMPDIR:-/tmp}"
+    fi
+    if ! stage_tmp=$(mktemp "${stage_dir}/mynode-lnd-conf.XXXXXX" 2>/dev/null); then
+        ts_m_log "managed-mynode-lnd-pre: failed to allocate staging file"
+        exit 1
+    fi
     if ! awk \
         -v fix_listen="$fix_listen" \
         -v add_listens_nl="$add_listens_nl" \
@@ -8261,19 +8268,72 @@ ts_m_cmd_mynode_lnd_pre() {
                 if (add_streamiso != "") print "tor.streamisolation=" add_streamiso
                 if (add_skipproxy != "") print "tor.skip-proxy-for-clearnet-targets=" add_skipproxy
             }
-        }' "$lnd_conf" > "$tmp" 2>/dev/null; then
-        rm -f "$tmp" 2>/dev/null || true
+        }' "$lnd_conf" > "$stage_tmp" 2>/dev/null; then
+        rm -f "$stage_tmp" 2>/dev/null || true
         ts_m_log "managed-mynode-lnd-pre: failed to stage reconciled /mnt/hdd/mynode/lnd/lnd.conf"
         exit 1
     fi
-    chmod "$mode" "$tmp" 2>/dev/null || chmod 0640 "$tmp" 2>/dev/null || true
-    if [[ -n "$owner" ]] && [[ "$EUID" -eq 0 ]]; then
-        chown "$owner" "$tmp" 2>/dev/null || chown "${TS_M_INV_USER}:bitcoin" "$tmp" 2>/dev/null || true
-    fi
-    if ! mv -f "$tmp" "$lnd_conf" 2>/dev/null; then
-        rm -f "$tmp" 2>/dev/null || true
-        ts_m_log "managed-mynode-lnd-pre: failed to update /mnt/hdd/mynode/lnd/lnd.conf"
-        exit 1
+    if [[ "$EUID" -eq 0 ]] && id -u bitcoin >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+        if ! runuser -u bitcoin -g bitcoin -- python3 - "$lnd_conf" "$mode" 3< "$stage_tmp" <<'PY' 2>/dev/null
+import os, secrets, sys
+target, mode_s = sys.argv[1:3]
+if os.path.islink(target):
+    sys.exit(1)
+with os.fdopen(3, "rb") as f_in:
+    data = f_in.read()
+try:
+    mode = int(mode_s, 8)
+except ValueError:
+    mode = 0o640
+tmp = f"{target}.tunnelsats.tmp.{os.getpid()}.{secrets.token_hex(6)}"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
+try:
+    with os.fdopen(fd, "wb") as f_out:
+        f_out.write(data)
+        f_out.flush()
+        os.fsync(f_out.fileno())
+    os.chmod(tmp, mode)
+    if os.path.islink(target):
+        raise OSError("Target became symlink")
+    os.replace(tmp, target)
+except Exception:
+    try:
+        os.unlink(tmp)
+    except OSError:
+        pass
+    raise
+PY
+        then
+            rm -f "$stage_tmp" 2>/dev/null || true
+            ts_m_log "managed-mynode-lnd-pre: failed to update /mnt/hdd/mynode/lnd/lnd.conf as bitcoin"
+            exit 1
+        fi
+        rm -f "$stage_tmp" 2>/dev/null || true
+    else
+        if [[ -L "$lnd_conf" ]]; then
+            rm -f "$stage_tmp" 2>/dev/null || true
+            ts_m_log "managed-mynode-lnd-pre: refusing symlinked /mnt/hdd/mynode/lnd/lnd.conf"
+            exit 1
+        fi
+        if ! tmp=$(mktemp "${lnd_conf}.tunnelsats.tmp.XXXXXX" 2>/dev/null); then
+            rm -f "$stage_tmp" 2>/dev/null || true
+            ts_m_log "managed-mynode-lnd-pre: failed to create temp file for /mnt/hdd/mynode/lnd/lnd.conf"
+            exit 1
+        fi
+        if ! cp "$stage_tmp" "$tmp" 2>/dev/null; then
+            rm -f "$stage_tmp" "$tmp" 2>/dev/null || true
+            exit 1
+        fi
+        rm -f "$stage_tmp" 2>/dev/null || true
+        chmod "$mode" "$tmp" 2>/dev/null || chmod 0640 "$tmp" 2>/dev/null || true
+        if [[ -n "$owner" ]] && [[ "$EUID" -eq 0 ]]; then
+            chown -h "$owner" "$tmp" 2>/dev/null || chown -h "${TS_M_INV_USER}:bitcoin" "$tmp" 2>/dev/null || true
+        fi
+        if ! mv -f "$tmp" "$lnd_conf" 2>/dev/null; then
+            rm -f "$tmp" 2>/dev/null || true
+            ts_m_log "managed-mynode-lnd-pre: failed to update /mnt/hdd/mynode/lnd/lnd.conf"
+            exit 1
+        fi
     fi
 
     cur_listens=()

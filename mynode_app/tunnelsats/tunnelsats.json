@@ -49,11 +49,11 @@
         {
             "heading": "Getting Started",
             "content": [
-                "Click Open App on the left to launch the TunnelSats dashboard.",
+                "Click Open App on the left to launch the TunnelSats dashboard (protected by your MyNode login).",
                 "Select a VPN server region and subscription plan (1, 3, 6, or 12 months), or import an existing TunnelSats WireGuard configuration.",
                 "Pay the BOLT11 Lightning invoice with any Lightning wallet. TunnelSats generates your WireGuard X25519 private key locally on your myNode device and provisions your dedicated forwarded port automatically.",
-                "In Automated Mode (default), TunnelSats configures the fail-closed managed dataplane (tunnelsats.slice + nftables kill switch) and updates /mnt/hdd/mynode/settings/lnd_extra_config.conf for hybrid Clearnet + Tor routing.",
-                "In Manual / CLI Mode (SECURE_MODE=true), the dashboard stages your configuration at /mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf and displays exact SSH commands for manual operator execution."
+                "Root-owned host reconciliation configures the fail-closed managed dataplane (tunnelsats.slice + nftables kill switch) and updates /mnt/hdd/mynode/settings/lnd_extra_config.conf for hybrid Clearnet + Tor routing.",
+                "For manual CLI-only operation, enable root-enforced Secure Mode via 'sudo /usr/local/sbin/tunnelsats-reconcile enable-secure-mode' over SSH so host mutations only run from root SSH commands."
             ]
         }
     ],
