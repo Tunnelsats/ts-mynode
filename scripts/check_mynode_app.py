@@ -125,6 +125,16 @@ def check_app_ports(short_name, app_dir, app_data):
             errors.append(f"{service_file} must set User={app_data.get('linux_user', short_name)}")
         if "ExecStartPre=+" not in service_src:
             errors.append(f"{service_file} must run pre_{short_name}.sh with ExecStartPre=+ root prefix")
+        if "ExecStopPost=" in service_src:
+            errors.append(f"{service_file} must not define ExecStopPost")
+
+    if nginx_conf:
+        if nginx_conf.count("include /etc/nginx/mynode/mynode_session_auth.conf;") < 2:
+            errors.append(f"{nginx_file} must include /etc/nginx/mynode/mynode_session_auth.conf in both HTTP and HTTPS server blocks")
+        if nginx_conf.count("auth_request /mynode_auth_check;") < 2:
+            errors.append(f"{nginx_file} must enforce auth_request /mynode_auth_check in both HTTP and HTTPS server blocks")
+        if "proxy_set_header Cookie $mynode_proxy_cookie;" not in nginx_conf:
+            errors.append(f"{nginx_file} HTTP block must set proxy_set_header Cookie $mynode_proxy_cookie;")
 
     return errors, warnings
 
@@ -162,13 +172,26 @@ def check_mynode_app(app_dir=DEFAULT_APP_DIR, short_name="tunnelsats", strict_wa
         f"scripts/pre_{short_name}.sh",
         f"scripts/post_{short_name}.sh",
         f"scripts/uninstall_{short_name}.sh",
-        f"www/python/{short_name}.py",
+        "www/python/tunnelsats.py" if short_name == "tunnelsats" else f"www/python/{short_name}.py",
         f"www/templates/{short_name}.html",
         "screenshots/1.png",
+        "root_scripts/reconcile_mynode.sh",
+        "root_scripts/tunnelsats.sh",
     ]
     for rel_path in required_files:
         if not os.path.isfile(os.path.join(app_dir, rel_path)):
             errors.append(f"Missing required file: {rel_path}")
+
+    if os.path.abspath(app_dir) == os.path.abspath(DEFAULT_APP_DIR):
+        for script_name in ("reconcile_mynode.sh", "tunnelsats.sh"):
+            root_copy = os.path.join(app_dir, "root_scripts", script_name)
+            repo_copy = os.path.join(REPO_ROOT, "scripts", script_name)
+            if os.path.isfile(root_copy) and os.path.isfile(repo_copy):
+                with open(root_copy, "rb") as f1, open(repo_copy, "rb") as f2:
+                    if f1.read() != f2.read():
+                        errors.append(
+                            f"root_scripts/{script_name} does not match scripts/{script_name} byte-for-byte"
+                        )
 
     for root, dirs, files in os.walk(app_dir):
         dirs[:] = [d for d in dirs if not d.startswith(".")]

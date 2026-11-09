@@ -2534,9 +2534,13 @@ function renderMynodeControls(m) {
   if (tileB) tileB.classList.toggle('is-selected', secure)
   const toggleBtn = byId('btn-mynode-toggle-mode')
   if (toggleBtn) {
-    toggleBtn.textContent = secure
-      ? 'Switch to Mode A (Integrated Mode)'
-      : 'Switch to Mode B (Secure / Manual CLI)'
+    const rootLocked = Boolean(mn.rootSecureMode || mn.rootLockedSecureMode)
+    toggleBtn.disabled = rootLocked
+    toggleBtn.textContent = rootLocked
+      ? 'Locked by Host Root (Mode B)'
+      : secure
+        ? 'Switch to Mode A (Integrated Mode)'
+        : 'Switch to Mode B (Secure / Manual CLI)'
   }
   const applyBtn = byId('btn-mynode-apply')
   if (applyBtn) applyBtn.disabled = secure || !Boolean(m && m.configured)
@@ -2574,6 +2578,23 @@ function showModalFeedback(id, text, level = 'info') {
   el.classList.toggle('is-success', level === 'success')
 }
 
+async function apiFetch(url, options) {
+  const response = await fetch(url, options)
+  if (
+    response &&
+    ((response.redirected &&
+      typeof response.url === 'string' &&
+      response.url.includes('/mynode_ui/login')) ||
+      response.status === 401)
+  ) {
+    if (typeof window !== 'undefined' && window.location) {
+      window.location.reload()
+    }
+    throw new Error('MyNode session expired')
+  }
+  return response
+}
+
 async function submitImportConfig() {
   const area = byId('import-config-textarea')
   const applyCheckbox = byId('import-apply-now')
@@ -2592,7 +2613,7 @@ async function submitImportConfig() {
     'info',
   )
   try {
-    const response = await fetch('/api/config/import', {
+    const response = await apiFetch('/api/config/import', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2616,15 +2637,20 @@ async function submitImportConfig() {
       )
       return
     }
+    if (area) area.value = ''
     showModalFeedback('import-config-feedback', '', 'info')
     const dialog = byId('import-config-modal')
     if (dialog && dialog.open) dialog.close()
+    const rec = data.reconcile || null
     localIntentFeedback = {
-      level: 'success',
+      level: rec && rec.status === 'staged' ? 'info' : 'success',
       text:
-        data.reconcile && data.reconcile.status === 'ok'
+        rec && rec.status === 'ok'
           ? 'WireGuard configuration imported and applied on MyNode.'
-          : 'WireGuard configuration imported.',
+          : rec && rec.status === 'staged'
+            ? rec.message ||
+              'WireGuard configuration imported and staged for the MyNode root reconciler.'
+            : 'WireGuard configuration imported.',
     }
     await refresh()
   } catch (err) {
@@ -2647,7 +2673,7 @@ async function openExportConfigModal() {
   )
   if (dialog && !dialog.open) dialog.showModal()
   try {
-    const response = await fetch('/api/config/export', {
+    const response = await apiFetch('/api/config/export', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2730,7 +2756,7 @@ async function submitNwcConnect() {
   }
   showModalFeedback('nwc-modal-feedback', 'Connecting NWC wallet…', 'info')
   try {
-    const response = await fetch('/api/nwc/connect', {
+    const response = await apiFetch('/api/nwc/connect', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2774,7 +2800,7 @@ async function submitNwcConnect() {
 async function submitNwcDisconnect() {
   showModalFeedback('nwc-modal-feedback', 'Disconnecting NWC wallet…', 'info')
   try {
-    const response = await fetch('/api/nwc/disconnect', {
+    const response = await apiFetch('/api/nwc/disconnect', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2813,7 +2839,7 @@ async function submitNwcDisconnect() {
 async function toggleMynodeMode() {
   const cur = Boolean(model && model.mynode && model.mynode.secureMode)
   try {
-    const response = await fetch('/api/mynode/mode', {
+    const response = await apiFetch('/api/mynode/mode', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2856,7 +2882,7 @@ async function triggerMynodeReconcile(action) {
   }
   render()
   try {
-    const response = await fetch('/api/mynode/reconcile', {
+    const response = await apiFetch('/api/mynode/reconcile', {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -2871,6 +2897,15 @@ async function triggerMynodeReconcile(action) {
       localIntentFeedback = {
         level: 'error',
         text: data.error || `Reconciler ${action} failed (HTTP ${response.status})`,
+      }
+    } else if (data.status === 'staged') {
+      localIntentFeedback = {
+        level: 'info',
+        text:
+          data.message ||
+          (action === 'restore'
+            ? 'Tor-only restore staged for the MyNode root reconciler.'
+            : 'TunnelSats desired state staged for the MyNode root reconciler.'),
       }
     } else {
       localIntentFeedback = {
@@ -2918,7 +2953,7 @@ async function refresh() {
   lastPollAt = Date.now()
   const read = ++dashboardReads
   try {
-    const response = await fetch(DASHBOARD_URL, {
+    const response = await apiFetch(DASHBOARD_URL, {
       cache: 'no-store',
       credentials: 'same-origin',
     })
@@ -2946,7 +2981,7 @@ async function refresh() {
 async function loadServers() {
   serversLoadedAt = Date.now()
   try {
-    const response = await fetch(SERVERS_URL, {
+    const response = await apiFetch(SERVERS_URL, {
       cache: 'no-store',
       credentials: 'same-origin',
     })
@@ -2996,7 +3031,7 @@ async function checkReachability() {
   reachabilityResult = null
   renderReachability(model)
   try {
-    const response = await fetch(REACHABILITY_URL, {
+    const response = await apiFetch(REACHABILITY_URL, {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -3090,7 +3125,7 @@ async function submitIntent(actionKey) {
   render()
 
   try {
-    const response = await fetch(INTENTS_URL, {
+    const response = await apiFetch(INTENTS_URL, {
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
@@ -3304,6 +3339,22 @@ function bindEvents() {
 
   const refreshButton = byId('btn-refresh')
   if (refreshButton) refreshButton.addEventListener('click', () => refresh())
+
+  for (const [dialogId, fieldIds] of [
+    ['export-config-modal', ['export-config-textarea']],
+    ['import-config-modal', ['import-config-textarea', 'import-config-file']],
+    ['nwc-wallet-modal', ['nwc-uri-input']],
+  ]) {
+    const dialog = byId(dialogId)
+    if (dialog && typeof dialog.addEventListener === 'function') {
+      dialog.addEventListener('close', () => {
+        for (const fieldId of fieldIds) {
+          const field = byId(fieldId)
+          if (field) field.value = ''
+        }
+      })
+    }
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return

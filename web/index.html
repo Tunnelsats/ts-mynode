@@ -899,7 +899,7 @@
                 <strong>Mode A: Integrated 1-Click (Default)</strong>
               </div>
               <p>
-                Automatically updates <code>lnd_extra_config.conf</code> and applies <code>tunnelsats.sh --managed mynode</code> from the MyNode UI via the scoped root reconciler.
+                Stages validated desired state so the root-owned host reconciler updates <code>lnd_extra_config.conf</code> and applies <code>tunnelsats.sh --managed mynode</code> without <code>sudo</code>.
               </p>
             </div>
             <div id="mynode-mode-tile-b" class="reconciler-mode-tile">
@@ -920,7 +920,7 @@
                 <strong>Mode B: Secure Manual CLI</strong>
               </div>
               <p>
-                Disables privileged execution from the web service (<code>sudoers</code> removed). Stages <code>tunnelsatsv2.conf</code> locally and provides copy-paste SSH commands.
+                Disables automated host reconciliation (optional host lock at <code>/etc/tunnelsats/secure_mode</code>). Stages <code>tunnelsatsv2.conf</code> locally and provides copy-paste SSH commands.
               </p>
             </div>
           </div>
@@ -965,7 +965,7 @@
                     <span id="mynode-val-mode" class="reconciler-status-pill is-ok">Mode A: Integrated</span>
                   </td>
                   <td class="reconciler-target-cell">
-                    <code>/etc/sudoers.d/tunnelsats-reconcile</code>
+                    <code>/usr/local/sbin/tunnelsats-reconcile</code> · <code>/etc/tunnelsats/secure_mode</code>
                   </td>
                 </tr>
                 <tr>
@@ -1941,8 +1941,10 @@
                 Open
                 <strong>the Actions &amp; Plans tab in this dashboard</strong>
                 and use the <strong>MyNode Execution Mode &amp; Host Reconciler</strong>
-                card to switch between Mode A (1-click sudoers reconciler) and
-                Mode B (Manual SSH CLI mode).
+                card to switch between Mode A (zero-sudo root-owned reconciler)
+                and Mode B (Manual SSH CLI mode). Operators can also lock Mode B
+                permanently on the host via
+                <code>sudo /usr/local/sbin/tunnelsats-reconcile enable-secure-mode</code>.
               </p>
             </div>
           </details>
@@ -2201,7 +2203,7 @@
             </select>
           </label>
           <label class="modal-checkbox-row">
-            <input type="checkbox" id="nwc-route-tor" />
+            <input type="checkbox" id="nwc-route-tor" checked />
             <span>Route NWC relay traffic via Tor (SOCKS5h 127.0.0.1:9050)</span>
           </label>
           <p id="nwc-modal-feedback" class="reach-result" role="status" hidden></p>
