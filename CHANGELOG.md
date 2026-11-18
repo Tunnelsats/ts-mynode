@@ -2,6 +2,10 @@
 
 All notable changes to the TunnelSats myNode application are documented in this file.
 
+## [v1.0.1] - 2026-11-18
+
+- Security and App SDK v2 hardening: myNode session authentication, strict WireGuard allowlist canonicalization, zero-sudo root-owned reconciler, and idempotent boot-sync.
+
 ## [v1.0.0] - 2026-10-24
 
 - Initial v1.0.0 production release for myNode BTC (App SDK v2)

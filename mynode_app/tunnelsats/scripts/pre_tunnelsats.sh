@@ -77,9 +77,9 @@ fi
 
 APP_JSON="${APP_SHARE_DIR}/tunnelsats.json"
 if [ -f "$APP_JSON" ] && [ ! -L "$APP_JSON" ] && [ -d /home/bitcoin/.mynode ] && [ ! -L /home/bitcoin/.mynode ] && [ ! -e /home/bitcoin/.mynode/tunnelsats_version ]; then
-    APP_VER="v1.0.0"
+    APP_VER="v1.0.1"
     if command -v jq >/dev/null 2>&1; then
-        APP_VER=$(jq -r '.latest_version // "v1.0.0"' "$APP_JSON" 2>/dev/null || echo "v1.0.0")
+        APP_VER=$(jq -r '.latest_version // "v1.0.1"' "$APP_JSON" 2>/dev/null || echo "v1.0.1")
     fi
     if id -u bitcoin >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
         runuser -u bitcoin -g bitcoin -- python3 - "$APP_VER" <<'PY' 2>/dev/null || true
