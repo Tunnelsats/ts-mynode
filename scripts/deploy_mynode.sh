@@ -51,7 +51,7 @@ rsync -a --delete "${STAGE_DIR}/src/" "$INSTALL_DIR/"
 chown -hR tunnelsats:tunnelsats "$INSTALL_DIR"
 rm -rf "$STAGE_DIR"
 
-APP_VER=$(jq -r '.latest_version // "v1.0.0"' "$DST/tunnelsats.json" 2>/dev/null || echo "v1.0.0")
+APP_VER=$(jq -r '.latest_version // "v1.0.1"' "$DST/tunnelsats.json" 2>/dev/null || echo "v1.0.1")
 if id -u bitcoin >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
     runuser -u bitcoin -g bitcoin -- bash -c '
         set -euo pipefail

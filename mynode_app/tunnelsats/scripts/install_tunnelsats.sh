@@ -31,9 +31,9 @@ chmod +x "$INSTALL_DIR/bridge.py" 2>/dev/null || true
 # Note: MyNode's application_info.py writes /home/bitcoin/.mynode/tunnelsats_version
 # as root after install_tunnelsats.sh exits 0. Keep safe non-symlink fallback for manual runs.
 APP_JSON="/usr/share/mynode_apps/tunnelsats/tunnelsats.json"
-APP_VER="v1.0.0"
+APP_VER="v1.0.1"
 if [ -f "$APP_JSON" ] && command -v jq >/dev/null 2>&1; then
-    APP_VER=$(jq -r '.latest_version // "v1.0.0"' "$APP_JSON" 2>/dev/null || echo "v1.0.0")
+    APP_VER=$(jq -r '.latest_version // "v1.0.1"' "$APP_JSON" 2>/dev/null || echo "v1.0.1")
 fi
 if [ "$(id -u)" -eq 0 ] && id -u bitcoin >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1; then
     runuser -u bitcoin -g bitcoin -- python3 - "$APP_VER" <<'PY' 2>/dev/null || true

@@ -445,7 +445,7 @@ class TestBridgeMyNode(unittest.TestCase):
             "How do I back up or export my WireGuard configuration",
         ):
             self.assertIn(required_ui, html_text)
-        self.assertEqual(bridge.user_agent(), "TunnelSats-MyNode/1.0.0")
+        self.assertEqual(bridge.user_agent(), "TunnelSats-MyNode/1.0.1")
         for removed_redundant in (
             "btn-overview-backup",
             "btn-mynode-backup",
