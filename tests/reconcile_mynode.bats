@@ -16,6 +16,10 @@ setup() {
   export MANAGED_INVENTORY="${TEST_TMPDIR}/managed.json"
   export SUDOERS_FILE="${TEST_TMPDIR}/sudoers-tunnelsats"
   export RECONCILE_SBIN="${TEST_TMPDIR}/tunnelsats-reconcile"
+  export SECURE_MODE_FILE="${TEST_TMPDIR}/secure_mode"
+  export DESIRED_STATE_FILE="${TUNNELSATS_DATA_DIR}/desired-state.json"
+  export RECONCILE_STATUS_FILE="${TEST_TMPDIR}/reconcile-status.json"
+  export RECONCILE_LOCK_FILE="${TEST_TMPDIR}/reconcile.lock"
   mkdir -p "${TUNNELSATS_DATA_DIR}" "${WG_DIR}"
 }
 
@@ -197,4 +201,142 @@ EOF
 
   inv_perm="$(stat -c '%a' "${MANAGED_INVENTORY}" 2>/dev/null || stat -f '%Lp' "${MANAGED_INVENTORY}")"
   [ "${inv_perm}" = "644" ]
+}
+
+@test "apply and boot-sync reject WireGuard hook directives and SaveConfig on installed state" {
+  cat > "${MANAGED_INVENTORY}" <<'EOF'
+{
+  "schema": 1,
+  "state": "installed",
+  "profile": "mynode",
+  "impl": "lnd",
+  "unit": "lnd.service"
+}
+EOF
+  chmod 0644 "${MANAGED_INVENTORY}"
+
+  for bad_line in "PostUp = id > ${TEST_TMPDIR}/pwn" "PreUp = /bin/true" "SaveConfig = true"; do
+    cat > "${TUNNELSATS_CONF_PATH}" <<EOF
+[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.9.0.42/32
+${bad_line}
+# Server: eu1.tunnelsats.com
+# Port Forwarding: 34567
+
+[Peer]
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+Endpoint = eu1.tunnelsats.com:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+EOF
+    chmod 0600 "${TUNNELSATS_CONF_PATH}"
+
+    run "${RECONCILER}" apply "${TUNNELSATS_CONF_PATH}"
+    [ "$status" -eq 8 ]
+    [ ! -f "${WG_CONF_DST}" ]
+  done
+}
+
+@test "boot-sync is idempotent and performs zero restarts when config and slice are converged" {
+  cat > "${TUNNELSATS_CONF_PATH}" <<'EOF'
+[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.9.0.42/32
+# Server: eu1.tunnelsats.com
+# Port Forwarding: 34567
+
+[Peer]
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+Endpoint = eu1.tunnelsats.com:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+EOF
+  chmod 0600 "${TUNNELSATS_CONF_PATH}"
+
+  cat > "${MANAGED_INVENTORY}" <<'EOF'
+{
+  "schema": 1,
+  "state": "installed",
+  "profile": "mynode",
+  "impl": "lnd",
+  "unit": "lnd.service"
+}
+EOF
+  chmod 0644 "${MANAGED_INVENTORY}"
+
+  cat > "${LND_MAIN_CONFIG}" <<'EOF'
+[Application Options]
+listen=0.0.0.0:9735
+externalhosts=eu1.tunnelsats.com:34567
+[Tor]
+tor.skip-proxy-for-clearnet-targets=true
+tor.streamisolation=false
+EOF
+
+  export SYSTEMCTL_BIN="${TEST_TMPDIR}/mock_systemctl_conv.sh"
+  cat > "${SYSTEMCTL_BIN}" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "is-active" ]; then
+  exit 0
+fi
+if [ "${1:-}" = "show" ]; then
+  printf 'ControlGroup=/tunnelsats.slice/lnd.service\nDropInPaths=/etc/systemd/system/lnd.service.d/tunnelsats-managed.conf\nNeedDaemonReload=no\n'
+  exit 0
+fi
+echo "systemctl: $*" >> "${TEST_TMPDIR}/systemctl_conv.log"
+exit 0
+EOF
+  chmod +x "${SYSTEMCTL_BIN}"
+
+  run "${RECONCILER}" apply "${TUNNELSATS_CONF_PATH}"
+  [ "$status" -eq 0 ]
+  rm -f "${TEST_TMPDIR}/systemctl_conv.log"
+
+  run "${RECONCILER}" boot-sync
+  [ "$status" -eq 0 ]
+  [ ! -f "${TEST_TMPDIR}/systemctl_conv.log" ]
+}
+
+@test "restore persists desired-state tor-only so subsequent boot-sync does not re-enable VPN" {
+  cat > "${TUNNELSATS_CONF_PATH}" <<'EOF'
+[Interface]
+PrivateKey = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+Address = 10.9.0.42/32
+# Server: eu1.tunnelsats.com
+# Port Forwarding: 34567
+
+[Peer]
+PublicKey = BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+Endpoint = eu1.tunnelsats.com:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25
+EOF
+  chmod 0600 "${TUNNELSATS_CONF_PATH}"
+
+  export TS_SH_BIN="${TEST_TMPDIR}/mock_ts_restore.sh"
+  cat > "${TS_SH_BIN}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${TS_SH_BIN}"
+
+  export SYSTEMCTL_BIN="${TEST_TMPDIR}/mock_systemctl_restore.sh"
+  cat > "${SYSTEMCTL_BIN}" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${SYSTEMCTL_BIN}"
+
+  run "${RECONCILER}" apply "${TUNNELSATS_CONF_PATH}"
+  [ "$status" -eq 0 ]
+  grep -q '"desired": "active"' "${DESIRED_STATE_FILE}"
+
+  run "${RECONCILER}" restore
+  [ "$status" -eq 0 ]
+  grep -q '"desired": "tor-only"' "${DESIRED_STATE_FILE}"
+
+  run "${RECONCILER}" boot-sync
+  [ "$status" -eq 0 ]
+  ! grep -q "TUNNELSATS" "${LND_EXTRA_CONFIG}"
 }

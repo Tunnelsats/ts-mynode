@@ -55,49 +55,49 @@ cd ts-mynode
 
 ---
 
-## Architecture & Dual-Mode Privilege Separation
+## Architecture & Zero-Sudo Privilege Separation
 
 ```mermaid
 flowchart LR
-    Browser["Operator Browser (LAN / Tor)"] -->|"HTTP :8739 / HTTPS :8740"| Nginx["myNode nginx Reverse Proxy"]
-    Nginx -->|"http://127.0.0.1:18739"| Bridge["bridge.py (User=tunnelsats)"]
-    Bridge -->|"Atomic 0600 writes"| Storage["/mnt/hdd/mynode/tunnelsats/"]
+    Browser["Operator Browser (LAN / Tor)"] -->|"HTTPS :8740 (mynode_session_auth)"| Nginx["myNode nginx Reverse Proxy"]
+    Nginx -->|"http://127.0.0.1:18739"| Bridge["bridge.py (User=tunnelsats, zero sudo)"]
+    Bridge -->|"Atomic 0600 writes"| Storage["/mnt/hdd/mynode/tunnelsats/ (desired-state.json)"]
     Bridge -->|"HTTPS v1 API"| API["api.tunnelsats.com"]
-    Bridge -->|"SECURE_MODE=false: sudo -n"| Reconciler["/usr/local/sbin/tunnelsats-reconcile (root)"]
+    Storage -->|"Snapshot + strict allowlist"| Reconciler["/usr/local/sbin/tunnelsats-reconcile (root:root)"]
+    Reconciler -->|"install/uninstall --managed mynode"| Managed["/usr/local/sbin/tunnelsats (root:root)"]
     Reconciler -->|"block-insert / block-remove"| ExtraConf["/mnt/hdd/mynode/settings/lnd_extra_config.conf"]
-    Reconciler -->|"install/uninstall --managed mynode"| Managed["tunnelsats.sh --managed mynode"]
     Managed -->|"tunnelsats.slice + nftables + wg"| LND["lnd.service (Hybrid Clearnet + Tor)"]
 ```
 
-### 1. Mode A: Integrated 1-Click Mode (`SECURE_MODE=false`, default)
+### 1. Mode A: Integrated Mode (`SECURE_MODE=false`, default)
 
-- The web controller (`bridge.py`) runs as the unprivileged `tunnelsats` Linux user bound strictly to `127.0.0.1:18739` behind myNode's nginx reverse proxy (`8739` HTTP / `8740` HTTPS).
+- The web controller (`bridge.py`) runs as the unprivileged `tunnelsats` Linux user (with zero `sudo` rules) bound strictly to `127.0.0.1:18739` behind myNode's session-authenticated nginx reverse proxy (`8740` HTTPS, `8739` HTTP -> HTTPS redirect).
 - `/api/status` (with `/api/health` as a route alias) serves as the canonical health and operational telemetry endpoint (`200 OK` JSON status), while `/api/dashboard` returns the full MyNode UI read model.
-- Validated WireGuard configurations (`tunnelsatsv2.conf`), subscription metadata (`tunnelsats-meta.json`), and NWC secrets (`nwc-wallet.json`) are stored in `/mnt/hdd/mynode/tunnelsats/` with `0600` permissions.
-- When `pre_tunnelsats.sh` runs as root (`ExecStartPre=+`), it installs `/usr/local/sbin/tunnelsats-reconcile` (`root:root`, `0755`) and a tightly scoped `/etc/sudoers.d/tunnelsats-reconcile` rule permitting user `tunnelsats` to invoke only `/usr/local/sbin/tunnelsats-reconcile`.
-- Applying a tunnel from the MyNode UI invokes `reconcile_mynode.sh apply`, which:
-  1. Validates `/mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf` (`0600` permissions and strict WireGuard key/endpoint syntax).
-  2. Atomically inserts/updates the `# BEGIN TUNNELSATS` ... `# END TUNNELSATS` block in `/mnt/hdd/mynode/settings/lnd_extra_config.conf`.
-  3. Installs or refreshes `tunnelsats.sh install --managed mynode --impl "${TUNNELSATS_LN_IMPL:-lnd}"` (`tunnelsats.slice`, `tunnelsats-killswitch.service`, `wg-quick@tunnelsatsv2.service`, `tunnelsats-verifier.timer`) and restarts `lnd.service`.
+- Validated WireGuard configurations (`tunnelsatsv2.conf`), desired-state manifests (`desired-state.json`), subscription metadata (`tunnelsats-meta.json`), and NWC secrets (`nwc-wallet.json`) are stored in `/mnt/hdd/mynode/tunnelsats/` with `0600` permissions.
+- When `pre_tunnelsats.sh` runs as root (`ExecStartPre=+`), it installs `/usr/local/sbin/tunnelsats` and `/usr/local/sbin/tunnelsats-reconcile` (`root:root`, `0755`) exclusively from the root-owned package directory `/usr/share/mynode_apps/tunnelsats/root_scripts/` and executes an idempotent `boot-sync` convergence pass (zero `lnd.service` restarts when already converged).
+- Applying a tunnel via the root reconciler (`/usr/local/sbin/tunnelsats-reconcile`):
+  1. Snapshots and validates `/mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf` (`0600`, strict WireGuard key allowlist; all `wg-quick` hook directives rejected).
+  2. Arms or refreshes `tunnelsats` (`tunnelsats.slice`, `tunnelsats-killswitch.service`, `wg-quick@tunnelsatsv2.service`, `tunnelsats-verifier.timer`) first so LND is protected before hybrid clearnet settings are enabled.
+  3. Atomically converges the `# BEGIN TUNNELSATS` ... `# END TUNNELSATS` block in `/mnt/hdd/mynode/settings/lnd_extra_config.conf` and restarts `lnd.service` only when configuration or slice state actually changes.
 
 ### 2. Mode B: Secure Manual CLI Mode (`SECURE_MODE=true`)
 
-- Operators who prefer zero privileged helper execution from the web service can enable `SECURE_MODE=true` via the MyNode UI toggle or `/mnt/hdd/mynode/tunnelsats/config.json` (`{"secure-mode": true}`).
-- In Mode B, `reconcile_mynode.sh` refuses automated `apply`/`restore` actions and `pre_tunnelsats.sh` removes `/etc/sudoers.d/tunnelsats-reconcile`.
+- Operators who prefer manual-only host changes can enable `SECURE_MODE=true` via the MyNode UI toggle or lock Mode B permanently on the host via `sudo /usr/local/sbin/tunnelsats-reconcile enable-secure-mode` (`/etc/tunnelsats/secure_mode`).
+- In Mode B, `tunnelsats-reconcile` refuses automated `apply`/`restore`/`sync` actions.
 - The MyNode UI continues to handle server discovery, BOLT11 checkout, claim, renewal, bandwidth top-ups, NWC auto-renewal, `.conf` backup, and `.conf` staging at `/mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf`, while presenting exact copy-paste one-liner CLI commands for SSH execution:
 
 ```bash
-# Apply TunnelSats managed dataplane and LND hybrid config over SSH (via reconciler):
-sudo VPN_EXTERNAL_HOST=<vpn-server-host> VPN_PORT=<port> /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh apply /mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf
+# Apply TunnelSats managed dataplane and LND hybrid config over SSH (root-owned reconciler):
+sudo /usr/local/sbin/tunnelsats-reconcile apply
 
-# Or invoke tunnelsats.sh directly (pass --impl lnd to disambiguate when both lnd.service and lit.service exist on myNode):
-sudo /opt/mynode/tunnelsats/scripts/tunnelsats.sh install --managed mynode --impl lnd --non-interactive --yes --config /mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf
+# Or invoke the root-owned tunnelsats CLI directly:
+sudo /usr/local/sbin/tunnelsats install --managed mynode --impl lnd --non-interactive --yes --config /mnt/hdd/mynode/tunnelsats/tunnelsatsv2.conf
 
 # Verify live kernel dataplane and kill-switch attestation:
 sudo /usr/local/sbin/tunnelsats verify --json
 
 # Restore LND to Tor-only and remove managed dataplane:
-sudo /opt/mynode/tunnelsats/scripts/reconcile_mynode.sh restore
+sudo /usr/local/sbin/tunnelsats-reconcile restore
 ```
 
 ---

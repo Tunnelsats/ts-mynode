@@ -5,19 +5,22 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  release:
-    name: Verify & Publish GitHub Release
+  verify:
+    name: Verify Tag & Run Test Suite
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.11"
 
@@ -41,13 +44,31 @@ jobs:
             exit 1
           fi
 
-      - name: Run MyNode SDK linter and test suites
+      - name: Run MyNode SDK linter, tests, and ShellCheck
         run: |
           python3 scripts/check_mynode_app.py
           python3 -m unittest discover -s tests -p "test_*.py" -v
           bats tests/*.bats
+          shellcheck -x \
+            mynode_app/tunnelsats/scripts/*.sh \
+            mynode_app/tunnelsats/root_scripts/reconcile_mynode.sh \
+            scripts/reconcile_mynode.sh \
+            scripts/deploy_mynode.sh \
+            scripts/test.sh
 
-      - name: Compute release source tarball SHA-256 and publish GitHub Release
+  publish:
+    name: Publish GitHub Release
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify tarball commit SHA and publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -55,6 +76,11 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz"
           curl -fsSL "$TARBALL_URL" -o "/tmp/ts-mynode-${TAG}.tar.gz"
+          ARCHIVE_SHA=$(gzip -dc "/tmp/ts-mynode-${TAG}.tar.gz" | git get-tar-commit-id)
+          if [ "$ARCHIVE_SHA" != "${GITHUB_SHA}" ]; then
+            echo "::error::Archive commit ($ARCHIVE_SHA) does not match tested GITHUB_SHA (${GITHUB_SHA})"
+            exit 1
+          fi
           SHA256=$(sha256sum "/tmp/ts-mynode-${TAG}.tar.gz" | awk '{print $1}')
           cat <<EOF > /tmp/release-notes.md
           ## TunnelSats for myNode ${TAG}
@@ -71,4 +97,4 @@ jobs:
           - **Source Archive**: \`${TARBALL_URL}\`
           - **SHA-256**: \`${SHA256}\`
           EOF
-          gh release create "$TAG" --title "TunnelSats for myNode ${TAG}" --notes-file /tmp/release-notes.md
+          gh release create "$TAG" --verify-tag --target "${GITHUB_SHA}" --title "TunnelSats for myNode ${TAG}" --notes-file /tmp/release-notes.md

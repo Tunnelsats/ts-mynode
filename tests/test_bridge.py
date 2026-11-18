@@ -5,8 +5,11 @@ import io
 import json
 import os
 import pathlib
+import socket
 import tempfile
 import unittest
+import urllib.error
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
@@ -465,6 +468,257 @@ class TestBridgeMyNode(unittest.TestCase):
         self.assertIn("--fs-2xs: 0.8125rem;", css_text)
         self.assertNotIn("StartOS", css_text)
         self.assertNotIn("\u2014", css_text)
+
+    def test_wireguard_allowlist_rejects_hooks_and_saveconfig(self):
+        for bad_line in (
+            "PostUp = id > /tmp/pwned",
+            "PreUp = /bin/sh -c 'whoami'",
+            "PreDown = touch /tmp/down",
+            "PostDown = rm -rf /tmp/x",
+            "SaveConfig = true",
+            "Table = main",
+            "FwMark = 0x1234",
+            "ListenPort = 51820",
+            "UnknownDirective = foo",
+        ):
+            tainted = SAMPLE_WG_CONF.replace(
+                "Address = 10.9.0.42/32",
+                f"Address = 10.9.0.42/32\n{bad_line}",
+            )
+            with self.assertRaises(ValueError, msg=f"Expected rejection for: {bad_line}"):
+                bridge.validate_config(tainted)
+            code, resp = bridge.import_wireguard_config({"config": tainted, "applyNow": False})
+            self.assertEqual(code, 400, f"Expected 400 import rejection for: {bad_line}")
+            self.assertIn("error", resp)
+
+        extra_section = SAMPLE_WG_CONF + "\n[Interface]\nPostUp = echo bad\n"
+        with self.assertRaises(ValueError):
+            bridge.validate_config(extra_section)
+
+    def test_claim_rejects_ipv6_scope_id_newline_injection(self):
+        priv, pub = bridge.generate_wg_keypair()
+        server_pub = bridge.generate_wg_keypair()[1]
+        pending = {"privateKey": priv, "publicKey": pub}
+
+        bad_claim_allowed = {
+            "peer": {"publicKey": pub, "address": "10.9.0.77/32"},
+            "server": {
+                "publicKey": server_pub,
+                "endpoint": "de1.tunnelsats.com:51820",
+                "allowedIPs": "0.0.0.0/0, fd00::%0\n[Interface]\nPostUp = echo injected\n# /128",
+            },
+            "vpnPort": 45678,
+        }
+        with self.assertRaises(bridge.SettlementError):
+            bridge.assemble_claimed_config(bad_claim_allowed, pending)
+
+        bad_claim_addr = {
+            "peer": {
+                "publicKey": pub,
+                "address": "fd00::2%0\nPostUp = echo injected\n# /128",
+            },
+            "server": {
+                "publicKey": server_pub,
+                "endpoint": "de1.tunnelsats.com:51820",
+                "allowedIPs": "0.0.0.0/0",
+            },
+            "vpnPort": 45678,
+        }
+        with self.assertRaises(bridge.SettlementError):
+            bridge.assemble_claimed_config(bad_claim_addr, pending)
+
+        bad_claim_host_nl = {
+            "peer": {"publicKey": pub, "address": "10.9.0.77/32"},
+            "server": {
+                "publicKey": server_pub,
+                "endpoint": "de1.tunnelsats.com\n:51820",
+                "allowedIPs": "0.0.0.0/0",
+            },
+            "vpnPort": 45678,
+        }
+        with self.assertRaises(bridge.SettlementError):
+            bridge.assemble_claimed_config(bad_claim_host_nl, pending)
+
+    def test_root_enforced_secure_mode_cannot_be_disabled_over_http(self):
+        marker = self.root / "etc_secure_mode"
+        marker.write_text("true\n", encoding="utf-8")
+        with mock.patch.object(bridge, "SECURE_MODE_MARKER_PATH", str(marker)):
+            self.assertTrue(bridge.is_secure_mode())
+            st = bridge.get_mynode_reconciler_status()
+            self.assertTrue(st["rootSecureMode"])
+            self.assertTrue(st["rootLockedSecureMode"])
+            js_text = (REPO_ROOT / "web" / "script.js").read_text(encoding="utf-8")
+            self.assertIn("mn.rootSecureMode", js_text)
+            with self.assertRaises(PermissionError):
+                bridge.set_secure_mode(False)
+
+            csrf = bridge.get_csrf_token()
+            raw = b'{"secureMode": false}'
+            h = _FakeHTTPRequestHandler(
+                "POST",
+                "/api/mynode/mode",
+                headers={
+                    "Host": "mynode.local:8740",
+                    "Origin": "https://mynode.local:8740",
+                    "Content-Type": "application/json",
+                    "Content-Length": str(len(raw)),
+                    "X-TunnelSats-CSRF-Token": csrf,
+                },
+                body=raw,
+                client_ip="127.0.0.1",
+            )
+            h.do_POST()
+            self.assertEqual(h.status_code, 403)
+
+    def test_desired_state_staging_without_sudo(self):
+        bridge.save_configuration(SAMPLE_WG_CONF, target_node="lnd")
+        status_file = self.root / "reconcile-status.json"
+        with mock.patch.object(bridge, "RECONCILE_STATUS_PATH", str(status_file)), mock.patch.object(
+            bridge, "RECONCILER_SCRIPT_PATH", ""
+        ), mock.patch.object(bridge, "DESIRED_STATE_WAIT_SECONDS", 0.05), mock.patch(
+            "subprocess.run", side_effect=AssertionError("sudo/subprocess must not be invoked")
+        ):
+            code, resp = bridge.run_mynode_reconciler("apply")
+            self.assertEqual(code, 202)
+            self.assertEqual(resp["status"], "staged")
+            desired = json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))
+            self.assertEqual(desired["desired"], "active")
+            self.assertTrue(desired["requestId"])
+
+            # Simulate UI Restore setting desired="tor-only", followed by a paid BOLT11 claim in Mode A
+            code_rest, _ = bridge.run_mynode_reconciler("restore")
+            self.assertEqual(code_rest, 202)
+            self.assertEqual(
+                json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))["desired"],
+                "tor-only",
+            )
+            bridge.save_configuration(SAMPLE_WG_CONF, target_node="lnd", provisioned_key=SAMPLE_PUBKEY)
+            self.assertEqual(
+                json.loads((self.data_dir / "desired-state.json").read_text(encoding="utf-8"))["desired"],
+                "active",
+            )
+
+    def test_strict_origin_sec_fetch_site_cache_and_peer_uid(self):
+        csrf = bridge.get_csrf_token()
+
+        # Cross-port Origin on same hostname must be rejected
+        h_port = _FakeHTTPRequestHandler(
+            "POST",
+            "/api/config/export",
+            headers={
+                "Host": "mynode.local:8740",
+                "Origin": "https://mynode.local:3002",
+                "Content-Type": "application/json",
+                "Content-Length": "2",
+                "X-CSRF-Token": csrf,
+            },
+            body=b"{}",
+            client_ip="127.0.0.1",
+        )
+        h_port.do_POST()
+        self.assertEqual(h_port.status_code, 403)
+
+        # Sec-Fetch-Site: same-site (cross-port sibling MyNode app) must be rejected on POST
+        h_samesite = _FakeHTTPRequestHandler(
+            "POST",
+            "/api/config/export",
+            headers={
+                "Host": "mynode.local:8740",
+                "Content-Type": "application/json",
+                "Content-Length": "2",
+                "Sec-Fetch-Site": "same-site",
+                "X-CSRF-Token": csrf,
+            },
+            body=b"{}",
+            client_ip="127.0.0.1",
+        )
+        h_samesite.do_POST()
+        self.assertEqual(h_samesite.status_code, 403)
+
+        # HTML GET / must send Cache-Control: no-store, private and X-Frame-Options: DENY
+        h_html = _FakeHTTPRequestHandler(
+            "GET",
+            "/",
+            headers={"Host": "mynode.local:8740"},
+            client_ip="127.0.0.1",
+        )
+        h_html.do_GET()
+        self.assertEqual(h_html.status_code, 200)
+        self.assertIn("no-store", h_html.response_headers.get("cache-control", ""))
+        self.assertNotIn("etag", h_html.response_headers)
+        h_html.end_headers()
+
+        # Peer UID verification rejects co-tenant local UID (e.g. 1099) when enforced
+        with mock.patch.object(bridge, "_should_enforce_loopback_peer_uid", return_value=True), mock.patch.object(
+            bridge, "_lookup_loopback_peer_uid", return_value=1099
+        ), mock.patch.object(bridge, "_allowed_loopback_peer_uids", return_value=frozenset({0, 33, 1001})):
+            h_uid = _FakeHTTPRequestHandler(
+                "GET",
+                "/api/dashboard",
+                headers={"Host": "127.0.0.1:18739"},
+                client_ip="127.0.0.1",
+            )
+            h_uid.do_GET()
+            self.assertEqual(h_uid.status_code, 403)
+
+    def test_nwc_rejects_private_loopback_relays_and_protects_paid_renewal(self):
+        secret_a = "11" * 32
+        secret_b = "22" * 32
+        pub_b = bridge._nostr_pubkey_from_secret(secret_b)
+
+        for bad_relay in (
+            "wss://127.0.0.1:7777",
+            "wss://localhost/v1",
+            "wss://192.168.1.50/v1",
+            "wss://mynode.local/v1",
+            "wss://169.254.169.254/v1",
+        ):
+            encoded = urllib.parse.quote(bad_relay, safe="")
+            bad_uri = f"nostr+walletconnect://{pub_b}?relay={encoded}&secret={secret_a}"
+            with self.assertRaises(ValueError, msg=f"Expected SSRF rejection for {bad_relay}"):
+                bridge.parse_nwc_uri(bad_uri)
+
+        # Protect in-flight / paid NWC pendingRenewal from overwrite by manual renew intent
+        bridge.save_configuration(SAMPLE_WG_CONF, target_node="lnd")
+        with bridge.meta_lock():
+            meta = bridge.read_meta()
+            meta["pendingRenewal"] = {
+                "renewalId": "ren-paid",
+                "paymentHash": "cd" * 32,
+                "invoice": "lnbc1...",
+                "amountSats": 1000,
+                "duration": 3,
+                "publicKey": SAMPLE_PUBKEY,
+                "paidViaNwc": True,
+                "createdAt": _iso_future(-1),
+                "expiresAt": _iso_future(1),
+            }
+            bridge.atomic_write_json(bridge.META_FILE_PATH, meta)
+
+        code, _ = bridge.submit_dashboard_intent({"kind": "renew", "duration": "3m"})
+        self.assertEqual(code, 202)
+        outcomes = bridge.process_pending_intents()
+        self.assertTrue(outcomes.get("renew", "").startswith("failed:"))
+        self.assertEqual(bridge.read_meta()["pendingRenewal"]["renewalId"], "ren-paid")
+
+        # Default routeViaTor=True when omitted on direct API call, False when explicit
+        good_uri = f"nostr+walletconnect://{pub_b}?relay={urllib.parse.quote('wss://relay.damus.io', safe='')}&secret={secret_a}"
+        with mock.patch.object(socket, "getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]):
+            code_def, body_def = bridge.connect_nwc_wallet({"uri": good_uri})
+            self.assertEqual(code_def, 200)
+            self.assertTrue(body_def["nwc"]["routeViaTor"])
+            code_off, body_off = bridge.connect_nwc_wallet({"uri": good_uri, "routeViaTor": False})
+            self.assertEqual(code_off, 200)
+            self.assertFalse(body_off["nwc"]["routeViaTor"])
+
+        # _fetch_servers and check_reachability must route through _NO_REDIRECT_OPENER
+        with mock.patch.object(bridge._NO_REDIRECT_OPENER, "open", side_effect=urllib.error.URLError("blocked redirect")) as mock_opener:
+            with self.assertRaises(urllib.error.URLError):
+                bridge._fetch_servers()
+            self.assertEqual(mock_opener.call_count, 1)
+            rc_code, _ = bridge.check_reachability({"nodePubkey": "02" + "aa" * 32})
+            self.assertEqual(rc_code, 502)
+            self.assertEqual(mock_opener.call_count, 2)
 
 
 def _iso_future(hours):

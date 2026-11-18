@@ -22,6 +22,7 @@ if command -v shellcheck >/dev/null 2>&1; then
     echo "=== 4. ShellCheck ==="
     shellcheck -x \
         mynode_app/tunnelsats/scripts/*.sh \
+        mynode_app/tunnelsats/root_scripts/reconcile_mynode.sh \
         scripts/reconcile_mynode.sh \
         scripts/deploy_mynode.sh \
         scripts/test.sh
